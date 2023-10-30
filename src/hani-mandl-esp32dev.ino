@@ -88,9 +88,8 @@ String version = "V1.0 by F.";
 Adafruit_INA219 ina219;
 
 // Display
-#if DISPLAY_TYPE == 3
-  Arduino_DataBus *bus = new Arduino_HWSPI(13 /* DC */, 5 /* CS */);
-  Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
+Arduino_DataBus *bus = new Arduino_HWSPI(13 /* DC */, 5 /* CS */);
+Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
 
 // Fonts
 #if DISPLAY_TYPE == 3

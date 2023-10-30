@@ -1,112 +1,10 @@
-// Waage erkennen
-
-/*
-  HaniMandl Version W.0.1
-  ------------------------
-  Copyright (C) 2018-2023 by Marc Vasterling, Marc Wetzel, Clemens Gruber, Marc Junker, Andreas Holzhammer, Johannes Kuder, Jeremias Bruker
-            
-  2018-05 Marc Vasterling    | initiale Version, 
-                               veröffentlicht in der Facebook-Gruppe "Imkerei und Technik. Eigenbau",
-                               Marc Vasterling: "meinen Code kann jeder frei verwenden, ändern und hochladen wo er will, solange er nicht seinen eigenen Namen drüber setzt."
-  2018-06 Marc Vasterling    | verbesserte Version, 
-                               ebenfalls veröffentlicht in der Facebook-Gruppe
-  2019-01 Marc Wetzel        | Refakturierung und Dokumentation, 
-                               ebenfalls veröffentlicht in der Facebook-Gruppe
-  2019-02 Clemens Gruber     | code beautifying mit kleineren Umbenennungen bei Funktionen und Variablen
-                               Anpassung für Heltec WiFi Kit 32 (ESP32 onboard OLED) 
-                               - pins bei OLED-Initialisierung geändert
-                               - pins geändert, um Konflikte mit hard wired pins des OLEDs zu vermeiden 
-  2019-02 Clemens Gruber     | Aktivierung der internen pull downs für alle digitalen Eingaenge
-  2019-02 Clemens Gruber     | "normale" pins zu Vcc / GND geaendert um die Verkabelung etwas einfacher und angenehmer zu machen
-  2020-05 Andreas Holzhammer | Anpassungen an das veränderte ;-( pin-Layout der Version 2 des Heltec 
-                               wird verkauft als "New Wifi Kit 32" oder "Wifi Kit 32 V2"
-  2020-05 Marc Junker        | - Erweiterung von Poti auf Rotary Encoder 
-                               - alle Serial.prints in #ifdef eingeschlossen
-                               - "Glas" nun als Array mit individuellem Tara
-                               - Korrekturwert und Auswahl der Füllmenge über Drücken & Drehen des Rotary einstellbar
-  2020-05 Andreas Holzhammer | - Tara pro abzufüllendem Glas automatisch anpassen (Variable tara_glas)
-                               - Code läuft auch ohne Waage
-  2020-06 Andreas Holzhammer | - Code wahlweise mit Heltec V1 oder V2 nutzbar
-                               - Code wahlweise mit Poti oder Rotary nutzbar
-                               - Tara pro Glas einstellbar
-                               - Öffnungswinkel für Maximale Öffnung und Feindosierung im Setup konfigurierbar
-                               - Korrektur und Glasgröße im Automatikmodus per Rotary Encoder Button wählbar
-                               - Preferences löschbar über Setup
-                               - Gewicht blinkt bei Vollautomatik, wenn nicht vollständig gefüllt
-                               - Nicht kalibrierte Waage anzeigen, fehlende Waage anzeigen
-                               - Tara wird nur bei >20g gesetzt, verhindert den Autostart bei leerer Waage
-                               - Tarieren der Waage bei jedem Start bis +-20g. Sonst Warnung
-  2020-07 Andreas Holzhammer | Version 0.2.4
-                               - SCALE_READS auf 2 setzen? ca. 100ms schneller als 3, schwankt aber um +-1g
-                               - Reihenfolge der Boot-Meldungen optimiert, damit nur relevante Warnungen ausgegeben werden
-                               - Autokorrektur implementiert
-                               - LOGO! und Umlaute (Anregung von Johannes Kuder)
-                               - Stop-Taste verlässt Setup-Untermenüs (Anregung von Johannes Kuder)
-                               - Preferences nur bei Änderung speichern
-  2020-07 Andreas Holzhammer | Version 0.2.5
-                               - Anzeige der vorherigen Werte im Setup
-                               - Kulanzwert für Autokorrektur einstellbar
-                               - Setup aufgeräumt, minimaler Servowinkel einstellbar
-  2020-07 Andreas Holzhammer | Version 0.2.6
-                               - Kalibrierung der Waage verbessert; Messewerte runden; Waage "aufheizen" vor Bootscreen
-                               - Aktiver Piezo-Buzzer (Idee von Johannes Kuder)
-  2020-07 Johannes Kuder     | 0.2.7
-                               - Zählwerk für abgefüllte Gläser und Gewicht (nur im Automatikbetrieb)
-  2020-07 Jeremias Bruker    | 0.2.8
-                               - "GlasTyp" in allen Menüs und Automatikmodus integriert
-                               - 5 Gläser können vom User im Menüpunkt "Fuellmenge" in Gewicht und GlasTyp konfiguriert werden 
-                                 und werden nichtflüchtig gespeichert. So kann sich jeder User seine eigenen üblichen 5 Gläser anlegen
-                               - Stabilisierung des Waagenwerts nach Wunsch (define FEHLERKORREKTUR_WAAGE)
-                               - das Kalibriergewicht kann beim Kalibrierungsvorgang vom User verändert 
-                                 werden (nicht jeder hat 500g als Eichgewicht) und wird nichtflüchtig gespeichert
-                               - rotierendes Hauptmenü
-                               - Umkehrbarer Servo für linksseitige Quetschhähne :-)
-  2020-10 Andreas Holzhammer | 0.2.8.1
-                               - Bugfix: Servo konnte im Manuellen Modus unter Minimum bewegt werden
-                               - Glastoleranz über Variable steuerbar auf +-20g angepasst 
-  2020-12 Andreas Holzhammer | 0.2.9
-                               - Fortschrittsanzeige eingebaut
-                               - angepasst an ESP32Servo aus dem Bibliotheksverwalter
-  2021-02 Andreas Holzhammer | 0.2.10
-                               - Korrektur zwischen -90 und +20 anpassbar
-                               - Autokorrektur auch ohne Autostart 
-                               - Preferences Flash-schonender implementiert
-  2021-07 Andreas Holzhammer | 0.2.11
-                               - Credits-Seite
-                               - Fix für Rotary mit Schrittweite > 1
-  2021-11 Andreas Holzhammer | 0.2.12
-                               - Glastoleranz einstellbar
-                               - Komfortverstellung für Füllmengen (1g/5g/25g Schritte)
-  2023-01 Clemens Gruber     | 0.2.13
-                               - pin-Anpassungen für Hardware-Version V3 des Heltec "WiFi Kit 32 V3" mit wieder mal geändertem pin-Layout
-                               - Anpassungen für den ESP32 Arduino core Version ≥ 2.x
-                               - Display, U8g2: HW statt SW im constructor (ggf. Probleme mit älteren Heltec-Versionen)
-                               - Rotary: de-bouncing code im isr2 auskommentiert, da sie zu Abstürzen führte
-  2023-04 Roland Rust        | W.0.1
-                               - Code angepasst für das ESP32 Wroom DevKit und 2.4Zoll Display (128x64)
-                               - Pinbelegung geändert
-                               - Alles was mit dem Heltec Module zu tun hatte rausgeschmissen (Hardware Level entfernt)
-                               - Code für das Poti wurde entfernt. Nur noch Rotray Encoder
-                               - Code für Simulation an der Waage entfernt
-                               - Listen Setup entfernt. Gibt nur noch das Scroll Setup
-                               - All das geblinke eliminiert.
-                               - Erkennung der Waage geändert. (Habe den HX711 nicht immer angeschlossen da Waage und MC-Einheit getrennt sind. Hatte nur geschaut om ein HX711 angeschlossen ist)
-                               - Auswahl OLED über I2C oder SPI hinzugefügt
-                               - INA219 Menü hinzugefügt (wird Angezeigt sobald ein INA 219 instaliert ist)
-                               - Messung vom Servostrom hinzugefügt (Funktion ist noch experimental)
-                               - Setup Korrektur ins Setup Automatik verschoben. Macht für mich mehr Sinn und mit dem grossen Display hat es Platz
-                               - TFT display implementiert (320x240)
-
-  This code is in the public domain.
-  
-  Hinweise zur Hardware
-  ---------------------
-  - bei allen digitalen Eingängen sind interne pull downs aktiviert, keine externen-Widerstände nötig!
-*/
+// HaniMandl rewrite by Frank
+// For readabilty, I removed and changed as I saw fit
+// Supports only 320x240 color tft display
+// Code provided as is, use as you please
 
 #include <Arduino.h>
 #include <Wire.h>
-#include <U8g2lib.h>                /* aus dem Bibliotheksverwalter */
 #include <HX711.h>                  /* aus dem Bibliotheksverwalter */
 #include <ESP32Servo.h>             /* aus dem Bibliotheksverwalter */
 #include <Adafruit_INA219.h>        /* aus dem Bibliotheksverwalter */
@@ -115,7 +13,7 @@
 #include <Arduino_GFX_Library.h>    /* aus dem Bibliotheksverwalter */
 
 // Version
-String version = "W.0.1";
+String version = "V1.0 by F.";
 
 //
 // Usereinstellung
@@ -134,12 +32,9 @@ String version = "W.0.1";
                                   // 2 = 5kg Wägezelle
 #define SERVO_ERWEITERT           // definieren, falls die Hardware mit dem alten Programmcode mit Poti aufgebaut wurde oder der Servo zu wenig fährt
                                   // Sonst bleibt der Servo in Stop-Position einige Grad offen! Nach dem Update erst prüfen!
-#define ROTARY_SCALE 1            // in welchen Schritten springt unser Rotary Encoder. 
-                                  // Beispiele: KY-040 = 2, HW-040 = 1, für Poti-Betrieb auf 1 setzen
-#define DISPLAY_TYPE 1            // 1 = 128x64 pixel OLED Display angeschlossen über I2C
-                                  // 2 = 128x64 pixel OLED Display angeschlossen über SPI
-                                  // 3 = 320x240 pixel TFT Display ST7789 angeschlossen über SPI
-                                  // 99 = Oled über I2C und TFT über SPI für development
+#define ROTARY_SCALE 2            // number of steps for each click of your rotary encoder used
+#define DISPLAY_TYPE 3            // 3 = 320x240 pixel TFT Display ST7789 
+
 //#define FEHLERKORREKTUR_WAAGE   // falls Gewichtssprünge auftreten, können diese hier abgefangen werden
                                   // Achtung, kann den Wägeprozess verlangsamen. Vorher Hardware prüfen.
 //#define QUETSCHHAHN_LINKS       // Servo invertieren, falls der Quetschhahn von links geöffnet wird. Mindestens ein Exemplar bekannt
@@ -193,24 +88,12 @@ String version = "W.0.1";
 Adafruit_INA219 ina219;
 
 // Display
-#if DISPLAY_TYPE == 1
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* clock=*/ 22, /* data=*/ 21, /* reset=*/ U8X8_PIN_NONE);
-#elif DISPLAY_TYPE == 2
-  U8G2_SSD1309_128X64_NONAME0_F_4W_SW_SPI u8g2(U8G2_R0, /* clock=*/ 18, /* data=*/ 23, /* cs=*/ 5, /* dc=*/ 13, /* reset=*/ 14);
-#elif DISPLAY_TYPE == 3
+#if DISPLAY_TYPE == 3
   Arduino_DataBus *bus = new Arduino_HWSPI(13 /* DC */, 5 /* CS */);
   Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
-#elif DISPLAY_TYPE == 99
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* clock=*/ 22, /* data=*/ 21, /* reset=*/ U8X8_PIN_NONE);
-  Arduino_DataBus *bus = new Arduino_HWSPI(13 /* DC */, 5 /* CS */);
-  Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
-  //Arduino_GFX *gfx = new Arduino_ILI9341(bus, 14 /* RST */, 1 /* rotation */);
-#else
-  #error Kein Display definiert
-#endif
 
 // Fonts
-#if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+#if DISPLAY_TYPE == 3
   #include "./Fonts/Punk_Mono_Bold_120_075.h"           //10 x 7
   #include "./Fonts/Punk_Mono_Bold_160_100.h"           //13 x 9
   #include "./Fonts/Punk_Mono_Bold_200_125.h"           //16 x 12
@@ -226,18 +109,7 @@ Adafruit_INA219 ina219;
 #endif
 
 //Logos
-#if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-  #if USER == 2
-    #include "./Logos/LogoGeroldOLED.h"
-  #elif USER == 3
-    #include "./Logos/LogoRoliOLED.h"
-  #else
-    #include "./Logos/LogoBieneOLED.h"
-  #endif
-#endif
-
-
-#if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+#if DISPLAY_TYPE == 3
   #if USER == 2
     #include "./Logos/LogoGeroldTFT.h"
   #elif USER == 3
@@ -251,7 +123,7 @@ Adafruit_INA219 ina219;
 // ** Definition der pins 
 // ----------------------
 
-// ESP32-WROOM 38Pin Connector
+// ESP32-DEVKIT 30Pin Connector
 //
 #if HARDWARE_LEVEL == 1
   // Rotary Encoder
@@ -413,7 +285,7 @@ unsigned long  MENU_POS4;
 unsigned long  MARKER;
 //#define MARKER 0x1AF6
 
-#if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+#if DISPLAY_TYPE == 3
   void tft_colors() {
     if (color_scheme == 0) {          //dunkel
       BACKGROUND  = 0x0000;
@@ -785,7 +657,7 @@ void setupTripCounter(void) {
       }
       u8g2.sendBuffer();
     #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       j = 0;
       while ( j < 5 ) {
         gfx->setCursor(5, 30+((j+1) * y_offset_tft));
@@ -803,7 +675,7 @@ void setupTripCounter(void) {
         delay(1);
       }
       i = 0;
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         gfx->fillRect(0, 31, 320, 209, BACKGROUND);
       #endif
     }
@@ -817,22 +689,7 @@ void setupTripCounter(void) {
       modus = -1;
       return;
     }
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      j = 0;
-      u8g2.setFont(u8g2_font_courB08_tf);
-      u8g2.clearBuffer();
-      while (j < 5) {
-        u8g2.setCursor(1, 10 + (j * 13));
-        sprintf(ausgabe, "%4dg %3s", glaeser[j].Gewicht,GlasTypArray[glaeser[j].GlasTyp]);
-        u8g2.print(ausgabe);
-        u8g2.setCursor(65, 10 + (j * 13));
-        sprintf(ausgabe, "%8.3fkg", glaeser[j].Gewicht * glaeser[j].TripCount / 1000.0);
-        u8g2.print(ausgabe);
-        j++;
-      }
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       j = 0;
       while ( j < 5 ) {
         gfx->setCursor(5, 30+((j+1) * y_offset_tft));
@@ -850,7 +707,7 @@ void setupTripCounter(void) {
         delay(1);
       }
       i = 0;
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         gfx->fillRect(0, 31, 320, 209, BACKGROUND);
       #endif
     }
@@ -870,18 +727,7 @@ void setupTripCounter(void) {
       TripAbfuellgewicht += glaeser[j].Gewicht * glaeser[j].TripCount / 1000.0;
       j++;
     }
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_courB14_tf);
-      u8g2.setCursor(5, 15);
-      u8g2.print("Summe Trip:");
-      u8g2.setFont(u8g2_font_courB18_tf);
-      u8g2.setCursor(10, 50);
-      sprintf(ausgabe, "%5.1fkg", TripAbfuellgewicht);
-      u8g2.print(ausgabe);
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       gfx->setFont(Punk_Mono_Bold_600_375);
       sprintf(ausgabe, "Summe");
       x_pos = CenterPosX(ausgabe, 36, 320);
@@ -899,7 +745,7 @@ void setupTripCounter(void) {
         delay(1);
       }
       i = 0;
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         gfx->fillRect(0, 31, 320, 209, BACKGROUND);
       #endif
     }
@@ -918,16 +764,7 @@ void setupTripCounter(void) {
         return;
       }
       pos = getRotariesValue(SW_MENU);
-      #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-        u8g2.setFont(u8g2_font_courB10_tf);
-        u8g2.clearBuffer();
-        u8g2.setCursor(10, 12);    u8g2.print("Reset");
-        u8g2.setCursor(10, 28);    u8g2.print("Abbrechen");
-        u8g2.setCursor(0, 12 + ((pos) * 16));
-        u8g2.print("*");
-        u8g2.sendBuffer();
-      #endif
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         gfx->setCursor(5, 30+(1 * y_offset_tft));
         if (pos == 0) {gfx->setTextColor(MARKER);}
         else {gfx->setTextColor(TEXT);}
@@ -938,12 +775,7 @@ void setupTripCounter(void) {
         gfx->print("Abbrechen");
       #endif
       if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
-        #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-          u8g2.setCursor(105, 12 + ((pos) * 16));
-          u8g2.print("OK");
-          u8g2.sendBuffer();
-        #endif
-        #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+        #if DISPLAY_TYPE == 3
           gfx->setTextColor(MARKER);
           gfx->setCursor(283, 30+((pos+1) * y_offset_tft));
           gfx->print("OK");
@@ -968,7 +800,7 @@ void setupCounter(void) {
   int j;
   i = 1;
   float Abfuellgewicht = 0;
-  #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+  #if DISPLAY_TYPE == 3
     int y_offset_tft = 28;
     const char title[] = "Zählwerk";
     gfx->fillScreen(BACKGROUND);
@@ -987,22 +819,7 @@ void setupCounter(void) {
       modus = -1;
       return;
     }
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      j = 0;
-      u8g2.setFont(u8g2_font_courB08_tf);
-      u8g2.clearBuffer();
-      while ( j < 5 ) {
-        u8g2.setCursor(1, 10 + (j * 13));
-        sprintf(ausgabe, "%4dg %3s", glaeser[j].Gewicht,GlasTypArray[glaeser[j].GlasTyp]);
-        u8g2.print(ausgabe);
-        u8g2.setCursor(50, 10 + (j * 13));
-        sprintf(ausgabe, "%9d St.", glaeser[j].Count);
-        u8g2.print(ausgabe);
-        j++;
-      }
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       j = 0;
       while ( j < 5 ) {
         gfx->setCursor(5, 30+((j+1) * y_offset_tft));
@@ -1020,7 +837,7 @@ void setupCounter(void) {
         delay(1);
       }
       i = 0;
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         gfx->fillRect(0, 31, 320, 209, BACKGROUND);
       #endif
     }
@@ -1034,22 +851,7 @@ void setupCounter(void) {
       modus = -1;
       return;
     }
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      j = 0;
-      u8g2.setFont(u8g2_font_courB08_tf);
-      u8g2.clearBuffer();
-      while ( j < 5) {
-        u8g2.setCursor(1, 10 + (j * 13));
-        sprintf(ausgabe, "%4dg %3s", glaeser[j].Gewicht,GlasTypArray[glaeser[j].GlasTyp]);
-        u8g2.print(ausgabe);
-        u8g2.setCursor(65, 10 + (j * 13));
-        sprintf(ausgabe, "%8.3fkg", glaeser[j].Gewicht * glaeser[j].Count / 1000.0);
-        u8g2.print(ausgabe);
-        j++;
-      }
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       j = 0;
       while ( j < 5 ) {
         gfx->setCursor(5, 30+((j+1) * y_offset_tft));
@@ -1067,7 +869,7 @@ void setupCounter(void) {
         delay(1);
       }
       i = 0;
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         gfx->fillRect(0, 31, 320, 209, BACKGROUND);
       #endif
     }
@@ -1087,18 +889,7 @@ void setupCounter(void) {
       Abfuellgewicht += glaeser[j].Gewicht * glaeser[j].Count / 1000.0;
       j++;
     }
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_courB14_tf);
-      u8g2.setCursor(1, 15);
-      u8g2.print("Summe:");
-      u8g2.setFont(u8g2_font_courB18_tf);
-      u8g2.setCursor(10, 50);
-      sprintf(ausgabe, "%5.1fkg", Abfuellgewicht);
-      u8g2.print(ausgabe);
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       gfx->setFont(Punk_Mono_Bold_600_375);
       sprintf(ausgabe, "Summe");
       x_pos = CenterPosX(ausgabe, 36, 320);
@@ -1116,7 +907,7 @@ void setupCounter(void) {
         delay(1);
       }
       i = 0;
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         gfx->fillRect(0, 31, 320, 209, BACKGROUND);
       #endif
     }
@@ -1135,16 +926,7 @@ void setupCounter(void) {
         return;
       }
       pos = getRotariesValue(SW_MENU);
-      #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-        u8g2.setFont(u8g2_font_courB10_tf);
-        u8g2.clearBuffer();
-        u8g2.setCursor(10, 12);    u8g2.print("Reset");
-        u8g2.setCursor(10, 28);    u8g2.print("Abbrechen");
-        u8g2.setCursor(0, 12 + ((pos) * 16));
-        u8g2.print("*");
-        u8g2.sendBuffer();
-      #endif
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         gfx->setCursor(5, 30+(1 * y_offset_tft));
         if (pos == 0) {gfx->setTextColor(MARKER);}
         else {gfx->setTextColor(TEXT);}
@@ -1158,12 +940,7 @@ void setupCounter(void) {
         while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
           delay(1);
         }
-        #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-          u8g2.setCursor(105, 12 + ((pos) * 16));
-          u8g2.print("OK");
-          u8g2.sendBuffer();
-        #endif
-        #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+        #if DISPLAY_TYPE == 3
           gfx->setTextColor(MARKER);
           gfx->setCursor(283, 30+((pos+1) * y_offset_tft));
           gfx->print("OK");
@@ -1214,34 +991,7 @@ void setupTara(void) {
       #endif
       i++;
     }
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.setFont(u8g2_font_courB08_tf);
-      u8g2.clearBuffer();
-      j = 0;
-      while(j < 5) {
-        u8g2.setCursor(3, 10+(j*13));
-        if (glaeser[j].Gewicht < 1000) {
-          sprintf(ausgabe, "  %3dg - %3s", glaeser[j].Gewicht, GlasTypArray[glaeser[j].GlasTyp]); 
-        } 
-        else {
-          sprintf(ausgabe, " %.1fkg - %3s", float(glaeser[j].Gewicht) / 1000, GlasTypArray[glaeser[j].GlasTyp]); 
-        }
-        u8g2.print(ausgabe);
-        u8g2.setCursor(90, 10+(j*13));
-        if (glaeser[j].Tara > 0) { 
-          sprintf(ausgabe, " %4dg", glaeser[j].Tara); 
-          u8g2.print(ausgabe);
-        }
-        else {
-          u8g2.print(" fehlt");
-        }
-        j++;
-      }
-      u8g2.setCursor(0, 10+(getRotariesValue(SW_MENU)*13) );    
-      u8g2.print("*");
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       if (change) {
         gfx->fillScreen(BACKGROUND);
       }
@@ -1285,16 +1035,7 @@ void setupTara(void) {
 
 void setupCalibration(void) {
   float gewicht_raw;
-  #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_courB12_tf);
-    u8g2.setCursor(0, 12);    u8g2.print("Bitte Waage");
-    u8g2.setCursor(0, 28);    u8g2.print("leeren");
-    u8g2.setCursor(0, 44);    u8g2.print("und mit OK");
-    u8g2.setCursor(0, 60);    u8g2.print("bestätigen");
-    u8g2.sendBuffer();
-  #endif
-  #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+  #if DISPLAY_TYPE == 3
     gfx->fillScreen(BACKGROUND);
     int kali_gewicht_old = -1;
     const char menu[] = "Kalibrieren";
@@ -1330,7 +1071,7 @@ void setupCalibration(void) {
       i = 0;
     }
   }
-  #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+  #if DISPLAY_TYPE == 3
     gfx->fillScreen(BACKGROUND);
     gfx->setTextColor(TEXT);
     gfx->setFont(Punk_Mono_Bold_240_150);
@@ -1362,7 +1103,7 @@ void setupCalibration(void) {
       u8g2.setCursor(0, 60);    u8g2.print("bestätigen");
       u8g2.sendBuffer();
     #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       if (kali_gewicht != kali_gewicht_old) {
         gfx->setTextColor(BACKGROUND);
         if ((kali_gewicht >= 1000 and kali_gewicht_old <= 999) or (kali_gewicht_old >= 1000 and kali_gewicht <= 999)) {
@@ -1425,9 +1166,6 @@ void setupServoWinkel(void) {
   bool wert_aendern = false;
   bool servo_live = false;
   initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
-  #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-    int y_offset = 8;
-  #endif
   #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
     int y_offset_tft = 28;
     bool change = false;
@@ -1482,68 +1220,7 @@ void setupServoWinkel(void) {
                 break;
       }
     }
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.setFont(u8g2_font_courB08_tf);
-      u8g2.clearBuffer();
-      u8g2.setCursor(10, 1 * y_offset);
-      sprintf(ausgabe,"Livesetup       %3s", (servo_live==false?"aus":"ein"));
-      u8g2.print(ausgabe);
-      u8g2.setCursor(10, 2 * y_offset);
-      if (wert_aendern == true and wert_alt < 10 and menuitem == 1) {
-        sprintf(ausgabe,"Minimum   (%1d°) %3d°", wert_alt, winkel_min);
-      }
-      else if (wert_aendern == true and wert_alt < 100 and menuitem == 1) {
-        sprintf(ausgabe,"Minimum  (%2d°) %3d°", wert_alt, winkel_min);
-      }
-      else if (wert_aendern == true and wert_alt >= 100 and menuitem == 1) {
-        sprintf(ausgabe,"Minimum (%3d°) %3d°", wert_alt, winkel_min);
-      }
-      else {
-        sprintf(ausgabe,"Minimum        %3d°", winkel_min);
-      }
-      u8g2.print(ausgabe);
-      u8g2.setCursor(10, 3 * y_offset);
-      if (wert_aendern == true and wert_alt < 10 and menuitem == 2) {
-        sprintf(ausgabe,"Feindos.  (%1d°) %3d°", wert_alt, winkel_fein);
-      }
-      else if (wert_aendern == true and wert_alt < 100 and menuitem == 2) {
-        sprintf(ausgabe,"Feindos. (%2d°) %3d°", wert_alt, winkel_fein);
-      }
-      else if (wert_aendern == true and wert_alt >= 100 and menuitem == 2) {
-        sprintf(ausgabe,"Feindos.(%3d°) %3d°", wert_alt, winkel_fein);
-      }
-      else {
-        sprintf(ausgabe,"Feindos.       %3d°", winkel_fein);
-      }
-      u8g2.print(ausgabe);
-      u8g2.setCursor(10, 4 * y_offset);
-      if (wert_aendern == true and wert_alt < 10 and menuitem == 3) {
-        sprintf(ausgabe,"Maximum   (%1d°) %3d°", wert_alt, winkel_max);
-      }
-      else if (wert_aendern == true and wert_alt < 100 and menuitem == 3) {
-        sprintf(ausgabe,"Maximum  (%2d°) %3d°", wert_alt, winkel_max);
-      }
-      else if (wert_aendern == true and wert_alt >= 100 and menuitem == 3) {
-        sprintf(ausgabe,"Maximum (%3d°) %3d°", wert_alt, winkel_max);
-      }
-      else {
-        sprintf(ausgabe,"Maximum        %3d°", winkel_max);
-      }
-      u8g2.print(ausgabe);
-      u8g2.setCursor(10, (7 * y_offset) + 5);
-      u8g2.print("Speichern");
-      if (wert_aendern == false && menuitem < menuitem_used) {
-        u8g2.setCursor(1, 10+((menuitem)*y_offset)); u8g2.print("*");
-      }
-      else if (wert_aendern == true && menuitem < menuitem_used) {
-        u8g2.setCursor(1, 8+((menuitem)*y_offset)); u8g2.print("-");
-      }
-      else if (wert_aendern == false && menuitem == 6) {
-        u8g2.setCursor(1, 10+((menuitem)*y_offset) + 5); u8g2.print("*");
-      }
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       int j = 0;
       while(j < MenuepunkteAnzahl) {
         gfx->setTextColor(TEXT);
@@ -1641,11 +1318,6 @@ void setupServoWinkel(void) {
       while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
         delay(1);
       }
-      #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-        u8g2.setCursor(111, ((menuitem + 1) * y_offset) + 5);
-        u8g2.print("OK");
-        u8g2.sendBuffer();
-      #endif
       #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
         gfx->setCursor(283, 30+(7 * y_offset_tft));
         gfx->print("OK");
@@ -1725,49 +1397,7 @@ void setupAutomatik(void) {
       }
     }
     // Menu
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.setFont(u8g2_font_courB08_tf);
-      u8g2.clearBuffer();
-      sprintf(ausgabe,"Autostart       %3s", (autostart==0?"aus":"ein"));
-      u8g2.setCursor(10, 1 * y_offset);
-      u8g2.print(ausgabe);
-      if (glastoleranz > 0) {
-        if (glastoleranz > 9) {
-          sprintf(ausgabe,"Glastoleranz   %c%2dg", 177, glastoleranz);
-        }
-        else {
-          sprintf(ausgabe,"Glastoleranz    %c%1dg", 177, glastoleranz);
-        }
-      }
-      else {
-        sprintf(ausgabe,"Glastoleranz     %1dg", glastoleranz);
-      }
-      u8g2.setCursor(10, 2 * y_offset);
-      u8g2.print(ausgabe);
-      u8g2.setCursor(10, 3 * y_offset);
-      sprintf(ausgabe,"Korrektur      %3dg", korrektur);
-      u8g2.print(ausgabe);
-      u8g2.setCursor(10, 4 * y_offset);
-      sprintf(ausgabe,"Autokorrektur   %3s", (autokorrektur==0?"aus":"ein"));
-      u8g2.print(ausgabe);
-      u8g2.setCursor(10, 5 * y_offset);
-      sprintf(ausgabe,"-> Kulanz       %2dg", kulanz_gr);
-      u8g2.print(ausgabe);
-      u8g2.setCursor(10, (7 * y_offset) + 5);
-      u8g2.print("Speichern");
-      // Positionsanzeige im Menu. "*" wenn nicht ausgewählt, Pfeil wenn ausgewählt
-      if (wert_aendern == false && menuitem < menuitem_used) {
-        u8g2.setCursor(1, 10+((menuitem)*y_offset)); u8g2.print("*");
-      }
-      else if (wert_aendern == true && menuitem < menuitem_used) {
-        u8g2.setCursor(1, 8+((menuitem)*y_offset)); u8g2.print("-");
-      }
-      else if (wert_aendern == false && menuitem == 6) {
-        u8g2.setCursor(1, 10+((menuitem)*y_offset) + 5); u8g2.print("*");
-      }
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       int j = 0;
       while(j < MenuepunkteAnzahl) {
         gfx->setTextColor(TEXT);
@@ -1872,11 +1502,6 @@ void setupAutomatik(void) {
       while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
         delay(1);
       }
-      #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-        u8g2.setCursor(111, ((menuitem + 1) * y_offset) + 5);
-        u8g2.print("OK");
-        u8g2.sendBuffer();
-      #endif
       #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
         gfx->setCursor(283, 30+(7 * y_offset_tft));
         gfx->print("OK");
@@ -1916,21 +1541,7 @@ void setupFuellmenge(void) {
       return;
     }
     pos = getRotariesValue(SW_MENU);
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_courB08_tf);
-      j = 0;
-      while(j < 5) {
-        u8g2.setCursor(20, 10+(j*13)); 
-        sprintf(ausgabe, "%4dg      %3s", glaeser[j].Gewicht, GlasTypArray[glaeser[j].GlasTyp]);
-        u8g2.print(ausgabe);
-        j++;
-      }
-      u8g2.setCursor(10, 10+(getRotariesValue(SW_MENU)*13));    
-      u8g2.print("*");
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
         j = 0;
         while(j < 5) {
           if (j == pos) {
@@ -1973,27 +1584,7 @@ void setupFuellmenge(void) {
       return;
     }
     glaeser[pos].Gewicht = step2weight(getRotariesValue(SW_MENU));
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.clearBuffer();    
-      j = 0;
-      while(j < 5) {
-        u8g2.setCursor(20, 10+(j*13));
-        if (j == pos){ 
-          u8g2.setFont(u8g2_font_open_iconic_arrow_1x_t);
-          u8g2.drawGlyph(5, 11+(j*13), 0x42);
-          u8g2.drawGlyph(55, 11+(j*13), 0x41);
-          u8g2.setFont(u8g2_font_courB08_tf);   
-          sprintf(ausgabe, "%4dg      %3s", glaeser[j].Gewicht, GlasTypArray[glaeser[j].GlasTyp]);  
-        }
-        else {
-          sprintf(ausgabe, "%4dg      %3s", glaeser[j].Gewicht, GlasTypArray[glaeser[j].GlasTyp]);
-        }
-        u8g2.print(ausgabe);
-        j++;
-      }                     
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       j = 0;
       while(j < 5) {
         gfx->setCursor(10, 30+((j+1) * y_offset_tft));
@@ -2041,27 +1632,7 @@ void setupFuellmenge(void) {
       return;
     }
     glaeser[pos].GlasTyp = getRotariesValue(SW_MENU);
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.clearBuffer();
-      j = 0;
-      while(j < 5) {
-        u8g2.setCursor(20, 10+(j*13));
-        if (j == pos){
-          u8g2.setFont(u8g2_font_open_iconic_arrow_1x_t);
-          u8g2.drawGlyph(72, 11+(j*13), 0x42);
-          u8g2.drawGlyph(108, 11+(j*13), 0x41);
-          u8g2.setFont(u8g2_font_courB08_tf);
-          sprintf(ausgabe, "%4dg      %3s", glaeser[j].Gewicht, GlasTypArray[glaeser[j].GlasTyp]);
-        }
-        else {
-          sprintf(ausgabe, "%4dg      %3s", glaeser[j].Gewicht, GlasTypArray[glaeser[j].GlasTyp]);
-        }
-        u8g2.print(ausgabe);
-        j++;
-      }
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       j = 0;
       while(j < 5) {
         gfx->setCursor(10, 30+((j+1) * y_offset_tft));
@@ -2115,9 +1686,6 @@ void setupParameter(void) {
   int lastcolor_scheme = color_scheme;
   int lastcolor_marker = color_marker;
   bool wert_aendern = false;
-  #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-    int y_offset = 8;
-  #endif
   #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
     int y_offset_tft = 28;
     int wert_old = -1;
@@ -2171,36 +1739,7 @@ void setupParameter(void) {
       }
     }
     // Menu
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.setFont(u8g2_font_courB08_tf);
-      u8g2.clearBuffer();
-      sprintf(ausgabe,"Buzzer          %3s", (buzzermode==0?"aus":"ein"));
-      u8g2.setCursor(10, 1 * y_offset);
-      u8g2.print(ausgabe);
-      sprintf(ausgabe,"LED             %3s", (ledmode==0?"aus":"ein"));
-      u8g2.setCursor(10, 2 * y_offset);
-      u8g2.print(ausgabe);
-      sprintf(ausgabe,"Show Logo       %3s", (showlogo==0?"aus":"ein"));
-      u8g2.setCursor(10, 3 * y_offset);
-      u8g2.print(ausgabe);
-      sprintf(ausgabe,"Show Credits    %3s", (showcredits==0?"aus":"ein"));
-      u8g2.setCursor(10, 4 * y_offset);
-      u8g2.print(ausgabe);
-      u8g2.setCursor(10, (7 * y_offset) + 5);
-      u8g2.print("Speichern");
-      // Positionsanzeige im Menu. "*" wenn nicht ausgewählt, Pfeil wenn ausgewählt
-      if (wert_aendern == false && menuitem < menuitem_used) {
-        u8g2.setCursor(1, 10+((menuitem)*y_offset)); u8g2.print("*");
-      }
-      else if (wert_aendern == true && menuitem < menuitem_used) {
-        u8g2.setCursor(1, 8+((menuitem)*y_offset)); u8g2.print("-");
-      }
-      else if (wert_aendern == false && menuitem == 6) {
-        u8g2.setCursor(1, 10+((menuitem)*y_offset) + 5); u8g2.print("*");
-      }
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       if(change_scheme) {
         gfx->fillScreen(BACKGROUND);
         gfx->setTextColor(TEXT);
@@ -2322,12 +1861,7 @@ void setupParameter(void) {
       while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
         delay(1);
       }
-      #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-        u8g2.setCursor(111, ((menuitem + 1) * y_offset) + 5);
-        u8g2.print("OK");
-        u8g2.sendBuffer();
-      #endif
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         gfx->setCursor(283, 30+(7 * y_offset_tft));
         gfx->print("OK");
       #endif
@@ -2341,9 +1875,6 @@ void setupParameter(void) {
 void setupClearPrefs(void) {
   initRotaries(SW_MENU, 2, 0, 2, -1);
   int x_pos;
-  #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-    int y_offset = 8;
-  #endif
   #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
     int y_offset_tft = 28;
     gfx->fillScreen(BACKGROUND);
@@ -2367,25 +1898,7 @@ void setupClearPrefs(void) {
       return;
     }
     pos = getRotariesValue(SW_MENU);
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.setFont(u8g2_font_courB08_tf);
-      u8g2.clearBuffer();
-      u8g2.setCursor(10, 1 * y_offset);
-      u8g2.print("Lösche Preferences");
-      u8g2.setCursor(10, 2 * y_offset);
-      u8g2.print("Lösche NVS memory");
-      u8g2.setCursor(10, (7 * y_offset) + 5);
-      u8g2.print("Zurück");
-      if (pos == 2) {
-        u8g2.setCursor(0, (7 * y_offset) + 7);
-      }
-      else {
-        u8g2.setCursor(0, (pos + 1) * y_offset + 2);
-      }
-      u8g2.print("*");
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       int j = 0;
       while(j < MenuepunkteAnzahl) {
         if (j == pos) {
@@ -2451,9 +1964,6 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
   int cal_winkel = 0;
   int j = 0;
   int k = 0;
-  #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-    int y_offset = 8;
-  #endif
   #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
     int y_offset_tft = 28;
     bool change = false;
@@ -2511,38 +2021,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
       }
     }
     // Menu
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.setFont(u8g2_font_courB08_tf);
-      u8g2.clearBuffer();
-      u8g2.setCursor(10, 1 * y_offset);
-      sprintf(ausgabe,"Servo Strom  %4dmA", (current_servo));
-      u8g2.print(ausgabe);
-      if (current_servo > 0) {
-        u8g2.setCursor(10, 2 * y_offset);
-        u8g2.print("Cal. Quetschhan");
-        menuitem_used = 2;
-      }
-      else {
-        u8g2.setCursor(10, 2 * y_offset);
-        sprintf(ausgabe,"Zeige Strom an  %3s", (show_current==0?"aus":"ein"));
-        u8g2.print(ausgabe);
-        menuitem_used = 2;
-      }
-      u8g2.setCursor(10, (7 * y_offset) + 5);
-      u8g2.print("Speichern");
-      // Positionsanzeige im Menu. "*" wenn nicht ausgewählt, Pfeil wenn ausgewählt
-      if (wert_aendern == false && menuitem < menuitem_used) {
-        u8g2.setCursor(1, 10+((menuitem)*y_offset)); u8g2.print("*");
-      }
-      else if (wert_aendern == true && menuitem < menuitem_used) {
-        u8g2.setCursor(1, 8+((menuitem)*y_offset)); u8g2.print("-");
-      }
-      else if (wert_aendern == false && menuitem == 6) {
-        u8g2.setCursor(1, 10+((menuitem)*y_offset) + 5); u8g2.print("*");
-      }
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       int a = 0;
       while(a < MenuepunkteAnzahl) {
         gfx->setTextColor(TEXT);
@@ -2632,12 +2111,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
       while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
         delay(1);
       }
-      #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-        u8g2.setCursor(111, ((menuitem + 1) * y_offset) + 5);
-        u8g2.print("OK");
-        u8g2.sendBuffer();
-      #endif
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         gfx->setCursor(283, 30+(7 * y_offset_tft));
         gfx->print("OK");
       #endif
@@ -2659,29 +2133,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
         }
       }
       menuitem_used = 1;
-      #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-        u8g2.setFont(u8g2_font_courB08_tf);
-        u8g2.clearBuffer();
-        u8g2.setCursor(10, 1 * y_offset);
-        u8g2.print(kalibration_status);
-        u8g2.setCursor(10, 3 * y_offset);
-        sprintf(ausgabe,"max. Strom:  %4imA", current_servo - 30);
-        u8g2.print(ausgabe);
-        u8g2.setCursor(10, 4 * y_offset);
-        sprintf(ausgabe,"min. Winkel:   %3i°", winkel_min);
-        u8g2.print(ausgabe);
-        u8g2.setCursor(10, (7 * y_offset) + 5);
-        u8g2.print("Zurück");
-        // Positionsanzeige im Menu. "*" wenn nicht ausgewählt, Pfeil wenn ausgewählt
-        if (wert_aendern == false && menuitem < menuitem_used && kalibration_status == "Start") {
-          u8g2.setCursor(1, 10+((menuitem)*y_offset)); u8g2.print("*");
-        }
-        else if (wert_aendern == false && menuitem == 6) {
-          u8g2.setCursor(1, 10+((menuitem)*y_offset) + 5); u8g2.print("*");
-        }
-        u8g2.sendBuffer();
-      #endif
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         if (j == 1) {
           gfx->fillScreen(BACKGROUND);
           gfx->setTextColor(TEXT);
@@ -2760,27 +2212,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
         int scaletime = millis();
         bool measurement_run = false;
         while (!cal_done) {
-          #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-            u8g2.setFont(u8g2_font_courB08_tf);
-            u8g2.clearBuffer();
-            u8g2.setCursor(10, 1 * y_offset);
-            u8g2.print(kalibration_status);
-            u8g2.setCursor(10, 3 * y_offset);
-            sprintf(ausgabe,"Strom:       %4imA", current_mA);
-            u8g2.print(ausgabe);
-            u8g2.setCursor(10, 4 * y_offset);
-            sprintf(ausgabe,"Winkel:        %3i°", cal_winkel);
-            u8g2.print(ausgabe);
-            u8g2.setCursor(10, 5 * y_offset);
-            sprintf(ausgabe,"Quetschhan:   %5s", quetschhan);
-            u8g2.print(ausgabe);
-            u8g2.setCursor(1, (7 * y_offset) + 7); 
-            u8g2.print("*");
-            u8g2.setCursor(10, (7 * y_offset) + 5);
-            u8g2.print("Abbrechen");
-            u8g2.sendBuffer();
-          #endif
-          #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+          #if DISPLAY_TYPE == 3
             if (k == 1) {
               gfx->fillScreen(BACKGROUND);
               gfx->setTextColor(TEXT);
@@ -2871,24 +2303,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
               wert_old = current_mA;
             }
           #endif
-          #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-            u8g2.setFont(u8g2_font_courB08_tf);
-            u8g2.clearBuffer();
-            u8g2.setCursor(10, 1 * y_offset);
-            u8g2.print(kalibration_status);
-            u8g2.setCursor(10, 3 * y_offset);
-            sprintf(ausgabe,"Strom:       %4imA", current_mA);
-            u8g2.print(ausgabe);
-            u8g2.setCursor(10, 4 * y_offset);
-            sprintf(ausgabe,"Winkel:        %3i°", winkel_min);
-            u8g2.print(ausgabe);
-            u8g2.setCursor(1, (7 * y_offset) + 7); 
-            u8g2.print("*");
-            u8g2.setCursor(10, (7 * y_offset) + 5);
-            u8g2.print("Speichern");
-            u8g2.sendBuffer();
-          #endif
-          #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+          #if DISPLAY_TYPE == 3
             if (k==2) {
               gfx->setTextColor(TEXT);
               gfx->fillRect(0, 27+(1 * y_offset_tft)-19, 320, 25, BACKGROUND);
@@ -2965,37 +2380,19 @@ void processSetup(void) {
   servo_aktiv = 0;              // Servo-Betrieb aus
   SERVO_WRITE(winkel);
   rotary_select = SW_MENU;
-  initRotaries(SW_MENU, lastpos, -1, MenuepunkteAnzahl, -1);
+  initRotaries(SW_MENU, lastpos, -1, MenuepunkteAnzahl, 1);
   while (modus == MODE_SETUP and (digitalRead(switch_setup_pin)) == HIGH) {
     if (rotaries[SW_MENU].Value < 0) {
-      rotaries[SW_MENU].Value = MenuepunkteAnzahl - 1;
+      rotaries[SW_MENU].Value = (MenuepunkteAnzahl * ROTARY_SCALE) - 1;
     }
-    else if (rotaries[SW_MENU].Value > MenuepunkteAnzahl - 1) {
+    else if (rotaries[SW_MENU].Value > ((MenuepunkteAnzahl * ROTARY_SCALE) - 1)) {
       rotaries[SW_MENU].Value = 0;
     }
     int menuitem = getRotariesValue(SW_MENU) % MenuepunkteAnzahl;
     for (i = 0; i < MenuepunkteAnzahl; i++) {
       posmenu[i] = (menuitem + i) % MenuepunkteAnzahl;
     }
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_courB08_tf);
-      x_pos = CenterPosX(menuepunkte[posmenu[MenuepunkteAnzahl-1]], 6, 128); //ein Zeichen ist etwa 6 Pixel breit
-      u8g2.setCursor(x_pos,12);  
-      u8g2.print(menuepunkte[posmenu[MenuepunkteAnzahl-1]]);
-      u8g2.drawLine(0, 18, 128, 18);
-      u8g2.setFont(u8g2_font_courB12_tf);
-      x_pos = CenterPosX(menuepunkte[posmenu[0]], 10, 128); //ein Zeichen ist 10 Pixel breit
-      u8g2.setCursor(x_pos, 38);   
-      u8g2.print(menuepunkte[posmenu[0]]);
-      u8g2.drawLine(0, 47, 128, 47);
-      u8g2.setFont(u8g2_font_courB08_tf);
-      x_pos = CenterPosX(menuepunkte[posmenu[1]], 6, 128); //ein Zeichen ist etwa 6 Pixel breit
-      u8g2.setCursor(x_pos,62);   
-      u8g2.print(menuepunkte[posmenu[1]]);
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       if (menuitem != menuitem_old) {
         gfx->fillScreen(BACKGROUND);
         gfx->drawLine(0, 100, 320, 100, TEXT);
@@ -3233,13 +2630,6 @@ void processAutomatik(void) {
   // Automatik ein, leeres Glas aufgesetzt, Servo aus -> Glas füllen
   if (auto_aktiv == 1 && abs(gewicht) <= glastoleranz && servo_aktiv == 0) {
     rotary_select = SW_WINKEL;     // falls während der Parameter-Änderung ein Glas aufgesetzt wird
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99 
-      u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_courB24_tf);
-      u8g2.setCursor(15, 43);
-      u8g2.print("START");
-      u8g2.sendBuffer();
-    #endif
     #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
       // START: nicht schön aber es funktioniert (vieleicht mit Subprogrammen arbeiten damit es besser wird)
       //PLAY ICON setzen
@@ -3392,108 +2782,7 @@ void processAutomatik(void) {
   if (ina219_installed and (current_servo > 0 or show_current == 1)) {
     y_offset = 4;
   }
-  #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-    u8g2.clearBuffer();
-    // wenn kein Tara für unser Glas definiert ist, wird kein Gewicht sondern eine Warnung ausgegeben
-    if (tara > 0) {
-      // kein Glas aufgestellt 
-      if (gewicht < -20) {
-        u8g2.setFont(u8g2_font_courB12_tf);
-        u8g2.setCursor(28, 30 + y_offset); u8g2.print("Bitte Glas");
-        u8g2.setCursor(28, 44 + y_offset); u8g2.print("aufstellen");
-      } 
-      else {
-        if(autostart == 1 && auto_aktiv == 1 && servo_aktiv == 0 && gewicht >= -5 && gewicht - tara_glas < fmenge) {
-          u8g2.setFont(u8g2_font_unifont_t_symbols);
-          u8g2.drawGlyph(14, 38 + y_offset, 0x2612);
-          u8g2.setFont(u8g2_font_courB24_tf);
-        }
-        u8g2.setCursor(10, 42 + y_offset);
-        u8g2.setFont(u8g2_font_courB24_tf);
-        sprintf(ausgabe,"%5dg", gewicht - tara_glas);
-        u8g2.print(ausgabe);
-      }
-    } 
-    else {
-      u8g2.setCursor(42, 38 + y_offset);
-      u8g2.setFont(u8g2_font_courB14_tf);
-      sprintf(ausgabe,"%6s", "no tara!");
-      u8g2.print(ausgabe);
-    }
-    // Play/Pause Icon, ob die Automatik aktiv ist
-    u8g2.setFont(u8g2_font_open_iconic_play_2x_t);
-    u8g2.drawGlyph(0, 40 + y_offset, (auto_aktiv==1)?0x45:0x44 );
-    u8g2.setFont(u8g2_font_courB08_tf);
-    // Zeile oben, Öffnungswinkel absolut und Prozent, Anzeige Autostart
-    u8g2.setCursor(1, 9);
-    sprintf(ausgabe,"W=%-3d", winkel);
-    u8g2.print(ausgabe);
-    n = StringLenght(ausgabe);
-    u8g2.setCursor(n * 6 + 1, 9);
-    u8g2.print("°");
-    sprintf(ausgabe,"%3d%%", pos);
-    u8g2.setCursor(104, 9);
-    u8g2.print(ausgabe);
-    sprintf(ausgabe,"%2s", (autostart==1)?"AS":" ");
-    u8g2.setCursor(58, 9);
-    u8g2.print(ausgabe);
-    //INA219 Display
-    if (ina219_installed and (current_servo > 0 or show_current == 1)) {
-      u8g2.setCursor(0, 18);
-      sprintf(ausgabe,"Servo Current:");
-      u8g2.print(ausgabe);
-      sprintf(ausgabe, "%4imA", current_mA);
-      u8g2.setCursor(128 - 36, 18);
-      u8g2.print(ausgabe);
-    }
-    // Zeile unten
-    // Verstellung nur wenn Automatik inaktiv, gesteuert über Interrupt-Funktion 
-    if (servo_aktiv == 1) {
-      progressbar = 128.0*((float)gewicht/(float)zielgewicht);
-      progressbar = constrain(progressbar,0,128);
-      u8g2.drawFrame(0, 55, 128, 9);
-      u8g2.drawBox  (0, 55, progressbar, 9);
-    } 
-    else {
-      u8g2.setFont(u8g2_font_courB08_tf);
-      sprintf(ausgabe, "%sk=%-3d" , (autokorrektur==1)?"a":"", korrektur + autokorrektur_gr);
-      n = StringLenght(ausgabe);
-      if (rotary_select == SW_KORREKTUR) {
-        u8g2.setCursor(10, 62);
-        u8g2.setFont(u8g2_font_open_iconic_arrow_1x_t);
-        u8g2.drawGlyph(0, 63, 0x42);
-        u8g2.drawGlyph(n * 6 + 1 + 10, 63, 0x41);
-        u8g2.setFont(u8g2_font_courB08_tf);
-      }
-      else {
-        u8g2.setCursor(0, 62);
-      }
-      u8g2.print(ausgabe);
-      if (glaeser[fmenge_index].Gewicht > 999) {
-        sprintf(ausgabe, "%2.1fkg-%3s", float(glaeser[fmenge_index].Gewicht) / 1000, GlasTypArray[glaeser[fmenge_index].GlasTyp]);
-      }
-      else if (glaeser[fmenge_index].Gewicht >= 100) {
-        sprintf(ausgabe, "%3dg-%3s", glaeser[fmenge_index].Gewicht, GlasTypArray[glaeser[fmenge_index].GlasTyp]);
-      }
-      else {
-        sprintf(ausgabe, "%2dg-%3s", glaeser[fmenge_index].Gewicht, GlasTypArray[glaeser[fmenge_index].GlasTyp]);
-      }
-      n = StringLenght(ausgabe);
-      if (rotary_select == SW_MENU) {
-        u8g2.setCursor(128 - (n * 6 + 10), 62);
-        u8g2.setFont(u8g2_font_open_iconic_arrow_1x_t);
-        u8g2.drawGlyph(128 - 9, 63, 0x41);
-        u8g2.drawGlyph(128 - (n * 6 + 20), 63, 0x42);
-        u8g2.setFont(u8g2_font_courB08_tf);
-      }
-      else {
-        u8g2.setCursor(128 - (n * 6), 62);
-      }
-      u8g2.print(ausgabe);
-    }
-    u8g2.sendBuffer();
-  #endif
-  #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+  #if DISPLAY_TYPE == 3
     if (ina219_installed == 1 and current_mA != current_mA_alt and (current_servo > 0 or show_current == 1)) {
       gfx->fillRect(260, 187, 70, 18, BACKGROUND);
       gfx->setTextColor(TEXT);
@@ -3762,39 +3051,7 @@ void processHandbetrieb(void) {
       Serial.print(" servo_aktiv "); Serial.println(servo_aktiv);
     #endif
   #endif
-  #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_courB24_tf);
-    u8g2.setCursor(10, 42 + y_offset);
-    sprintf(ausgabe,"%5dg", gewicht);
-    u8g2.print(ausgabe);
-    u8g2.setFont(u8g2_font_open_iconic_play_2x_t);
-    u8g2.drawGlyph(0, 40 + y_offset, (servo_aktiv==1)?0x45:0x44 );
-    u8g2.setFont(u8g2_font_courB08_tf);
-    u8g2.setCursor(0, 11);
-    u8g2.setCursor(1, 9);
-    sprintf(ausgabe,"W=%-3d", winkel);
-    u8g2.print(ausgabe);
-    int n = StringLenght(ausgabe);
-    u8g2.setCursor(n * 6 + 1, 9);
-    u8g2.print("°");
-    sprintf(ausgabe,"%3d%%", pos);
-    u8g2.setCursor(104, 9);
-    u8g2.print(ausgabe);
-    if (ina219_installed and (current_servo > 0 or show_current == 1)) {
-      u8g2.setCursor(0, 18);
-      sprintf(ausgabe,"Servo Current:");
-      u8g2.print(ausgabe);
-      sprintf(ausgabe, "%4imA", current_mA);
-      u8g2.setCursor(128 - 36, 18);
-      u8g2.print(ausgabe);
-    }
-    u8g2.setCursor(0, 64);
-    sprintf(ausgabe, "Manuell  %s", (tara>0?"Tara":"    "));
-    u8g2.print(ausgabe);
-    u8g2.sendBuffer();
-  #endif
-  #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+  #if DISPLAY_TYPE == 3
     gfx->setFont(Punk_Mono_Bold_600_375);
     if (gewicht != gewicht_alt) {
       gfx->fillRect(80, 70, 200, 55, BACKGROUND);
@@ -3939,12 +3196,7 @@ void setup() {
     }
   }
   // Boot Screen
-  #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-    u8g2.setBusClock(800000);   // experimental
-    u8g2.begin();
-    u8g2.enableUTF8Print();
-  #endif
-  #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+  #if DISPLAY_TYPE == 3
     tft_colors();
     tft_marker();
     gfx->begin();
@@ -3952,9 +3204,6 @@ void setup() {
     gfx->setUTF8Print(true);
   #endif
   if (showlogo) {
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.clearBuffer();
-    #endif
     print_logo();
     delay(3000);
   }
@@ -3966,14 +3215,7 @@ void setup() {
   // Setup der Waage, Skalierungsfaktor setzen
   if (waage_vorhanden ==1) {                         // Waage angeschlossen?
     if (faktor == 0) {                               // Vorhanden aber nicht kalibriert
-      #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-        u8g2.clearBuffer();
-        u8g2.setFont(u8g2_font_courB18_tf);
-        u8g2.setCursor( 24, 24); u8g2.print("Nicht");
-        u8g2.setCursor( 10, 56); u8g2.print("kalibr.");
-        u8g2.sendBuffer();
-      #endif
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         gfx->fillScreen(BACKGROUND);
         gfx->setTextColor(RED);
         gfx->setFont(Punk_Mono_Bold_320_200);
@@ -4001,14 +3243,7 @@ void setup() {
     }
   }
   else {                                            // Keine Waage angeschlossen
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_courB24_tf);
-      u8g2.setCursor( 14, 24); u8g2.print("Keine");
-      u8g2.setCursor( 6, 56);  u8g2.print("Waage!");
-      u8g2.sendBuffer();
-    #endif
-    #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+    #if DISPLAY_TYPE == 3
       gfx->fillScreen(BACKGROUND);
       gfx->setTextColor(RED);
       gfx->setFont(Punk_Mono_Bold_320_200);
@@ -4040,14 +3275,7 @@ void setup() {
       #endif
     }
     else if (faktor != 0) {
-      #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-        u8g2.clearBuffer();
-        u8g2.setFont(u8g2_font_courB18_tf);
-        u8g2.setCursor( 24, 24); u8g2.print("Waage");
-        u8g2.setCursor( 10, 56); u8g2.print("leeren!");
-        u8g2.sendBuffer();
-      #endif
-      #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+      #if DISPLAY_TYPE == 3
         gfx->fillScreen(BACKGROUND);
         gfx->setTextColor(RED);
         gfx->setFont(Punk_Mono_Bold_320_200);
@@ -4111,17 +3339,7 @@ void loop() {
 }
 
 void print_credits() {
-  #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_helvB08_tf);
-    u8g2.setCursor(0, 10);    u8g2.print("Idee: M. Vasterling");
-    u8g2.setCursor(0, 23);    u8g2.print("Code: M. Vasterling, M.");
-    u8g2.setCursor(0, 36);    u8g2.print("Wetzel, C. Gruber, A.");
-    u8g2.setCursor(0, 49);    u8g2.print("Holzhammer, M. Junker,");
-    u8g2.setCursor(0, 62);    u8g2.print("J. Kuder, J. Bruker");
-    u8g2.sendBuffer();
-  #endif
-  #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+  #if DISPLAY_TYPE == 3
     int offset = 23;
     gfx->fillScreen(BACKGROUND);
     gfx->setTextColor(TEXT);
@@ -4151,28 +3369,13 @@ void print_credits() {
 
 #if USER == 2
   void print_logo() {
-    #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-      u8g2.clearBuffer();
-      u8g2.drawXBM(0,0,128,64,LogoGeroldOLED);
-      u8g2.sendBuffer();
-    #endif
     #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
     gfx->drawXBitmap(0, 0, LogoGeroldTFT, 320, 240, TEXT);
   #endif
   }
 #elif USER == 3
 void print_logo() {
-  #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-    u8g2.clearBuffer();
-    u8g2.drawXBM(0,0,128,64,LogoRoliOLED);
-    u8g2.setFont(u8g2_font_courB14_tf);
-    u8g2.setCursor(30, 27);    u8g2.print("HANI");
-    u8g2.setCursor(40, 43);    u8g2.print("MANDL");
-    u8g2.setFont(u8g2_font_courB08_tf);
-    u8g2.setCursor(95, 64);    u8g2.print(version);
-    u8g2.sendBuffer();
-  #endif
-  #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+  #if DISPLAY_TYPE == 3
     gfx->drawXBitmap(0, 0, LogoRoliTFT, 320, 240, YELLOW);
     gfx->setTextColor(YELLOW);
     gfx->setFont(Punk_Mono_Bold_200_125);
@@ -4182,18 +3385,7 @@ void print_logo() {
 }
 #else
 void print_logo() {
-  #if DISPLAY_TYPE == 1 or DISPLAY_TYPE == 2 or DISPLAY_TYPE == 99
-    u8g2.clearBuffer();
-    u8g2.drawXBM(0,0,80,64,LogoBieneOLED);
-    u8g2.setFont(u8g2_font_courB14_tf);
-    u8g2.setCursor(85, 27);    u8g2.print("HANI");
-    u8g2.setCursor(75, 43);    u8g2.print("MANDL");
-    u8g2.setFont(u8g2_font_courB08_tf);
-    u8g2.setCursor(77, 64);    u8g2.print(version);
-    u8g2.sendBuffer();
-    //u8g2.writeBufferXBM(Serial);	
-  #endif
-  #if DISPLAY_TYPE == 3 or DISPLAY_TYPE == 99
+  #if DISPLAY_TYPE == 3
     gfx->fillScreen(BACKGROUND);
     gfx->drawXBitmap(60, 10, LogoBieneTFT, 200, 160, TEXT);
     gfx->setTextColor(TEXT);

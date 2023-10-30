@@ -104,9 +104,6 @@ Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
 #define EncoderB 26
 #define EncoderButton 32
 
-//const int outputA  = 33;
-//const int outputB  = 26;
-//const int outputSW = 32;
 // Servo
 const int servo_pin = 2;
 // 3x Schalter Ein 1 - Aus - Ein 2, VCC pins wurden direkt auf VCC gelegt
@@ -136,9 +133,8 @@ struct rotary {
 #define SW_WINKEL    0
 #define SW_KORREKTUR 1
 #define SW_MENU      2
-struct rotary rotaries[3];         // Werden in setup() initialisiert
+struct rotary rotaries[3]; // will be initialized in setup()
 int rotary_select = SW_WINKEL;
-static boolean rotating = false;   // debounce management für Rotary Encoder
 
 // Füllmengen für 5 verschiedene Gläser
 struct glas { 
@@ -303,7 +299,7 @@ void IRAM_ATTR isr2() {
   aState = digitalRead(EncoderA); // Reads the "current" state of the encoder
   bState = digitalRead(EncoderB); // Reads the "current" state of the encoder
   if (aState != aLastState) {     
-    // If the outputB state is different to the outputA state, that means the encoder is rotating clockwise
+    // If the outputB state is different to the outputA state, that means the encoder is turned clockwise
     if (aState != bState) {
       rotaries[rotary_select].Value -= rotaries[rotary_select].Step;
     }
@@ -311,7 +307,6 @@ void IRAM_ATTR isr2() {
       rotaries[rotary_select].Value += rotaries[rotary_select].Step;
     }
     rotaries[rotary_select].Value = constrain( rotaries[rotary_select].Value, rotaries[rotary_select].Minimum, rotaries[rotary_select].Maximum);
-    rotating = false;
   }
   aLastState = aState; 
 }
@@ -346,9 +341,7 @@ void initRotaries( int rotary_mode, int rotary_value, int rotary_min, int rotary
 //
 boolean EncoderButtonTapped(void)
 { if (digitalRead(EncoderButton) == LOW) {
-    while(digitalRead(EncoderButton) == LOW) {
-    delay(1);
-    }
+    while(digitalRead(EncoderButton) == LOW);
     return true;
   }  
   else return false;
@@ -585,21 +578,17 @@ void setupTripCounter(void) {
   gfx->drawLine(0, 30, 320, 30, TEXT);
   while (i > 0) { //Erster Screen: Anzahl pro Glasgröße
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       modus = -1;
       return;
     }
-    j = 0;
-    while ( j < 5 ) {
+    for(int j=0;j<5;j++) {
       gfx->setCursor(5, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%4dg %3s", glaeser[j].Gewicht,GlasTypArray[glaeser[j].GlasTyp]);
       gfx->print(ausgabe);
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%11d St.", glaeser[j].TripCount);
       gfx->print(ausgabe);
-      j++;
     }
     if (EncoderButtonTapped()) {
       //verlasse Screen
@@ -610,21 +599,17 @@ void setupTripCounter(void) {
   i = 1;
   while (i > 0) { //Zweiter Screen: Gewicht pro Glasgröße
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       modus = -1;
       return;
     }
-    j = 0;
-    while ( j < 5 ) {
+    for(int j=0;j<5;j++) {
       gfx->setCursor(5, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%4dg %3s", glaeser[j].Gewicht,GlasTypArray[glaeser[j].GlasTyp]);
       gfx->print(ausgabe);
       gfx->setCursor(150, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%10.3fkg", glaeser[j].Gewicht * glaeser[j].TripCount / 1000.0);
       gfx->print(ausgabe);
-      j++;
     }
     if (EncoderButtonTapped()) {
       //verlasse Screen
@@ -635,17 +620,13 @@ void setupTripCounter(void) {
   i = 1;
   while (i > 0) { //Dritter Screen: Gesamtgewicht
     TripAbfuellgewicht = 0;
-    j = 0;
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       modus = -1;
       return;
     }
-    while (j < 5) {
+    for(int j=0;j<5;j++) {
       TripAbfuellgewicht += glaeser[j].Gewicht * glaeser[j].TripCount / 1000.0;
-      j++;
     }
     gfx->setFont(Punk_Mono_Bold_600_375);
     sprintf(ausgabe, "Summe");
@@ -659,9 +640,7 @@ void setupTripCounter(void) {
     gfx->setFont(Punk_Mono_Bold_240_150);
     if (digitalRead(EncoderButton) == LOW) {
       //verlasse Screen
-      while(digitalRead(EncoderButton) == LOW) {
-        delay(1);
-      }
+      while(digitalRead(EncoderButton) == LOW);
       i = 0;
       gfx->fillRect(0, 31, 320, 209, BACKGROUND);
     }
@@ -673,9 +652,7 @@ void setupTripCounter(void) {
     i = 1;
     while (i > 0) {
       if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-        while (digitalRead(button_stop_pin) == HIGH) {
-          delay(1);
-        }
+        while (digitalRead(button_stop_pin) == HIGH);
         modus = -1;
         return;
       }
@@ -693,11 +670,7 @@ void setupTripCounter(void) {
         gfx->setCursor(283, 30+((pos+1) * y_offset_tft));
         gfx->print("OK");
         if ( pos == 0) {
-          j = 0;
-          while ( j < 5  ) {
-            glaeser[j].TripCount = 0;
-            j++;
-          }
+          for(int j=0;j<5;j++)glaeser[j].TripCount = 0;
           setPreferences();
         }
         delay(1000);
@@ -723,21 +696,17 @@ void setupCounter(void) {
   gfx->drawLine(0, 30, 320, 30, TEXT);
   while (i > 0) { //Erster Screen: Anzahl pro Glasgröße
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       modus = -1;
       return;
     }
-    j = 0;
-    while ( j < 5 ) {
+    for(int j=0;j<5;j++) {
       gfx->setCursor(5, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%4dg %3s", glaeser[j].Gewicht,GlasTypArray[glaeser[j].GlasTyp]);
       gfx->print(ausgabe);
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%11d St.", glaeser[j].Count);
       gfx->print(ausgabe);
-      j++;
     }
     if (EncoderButtonTapped()) {
       //verlasse Screen
@@ -748,21 +717,17 @@ void setupCounter(void) {
   i = 1;
   while (i > 0) { //Zweiter Screen: Gewicht pro Glasgröße
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       modus = -1;
       return;
     }
-    j = 0;
-    while ( j < 5 ) {
+    for(int j=0;j<5;j++) {
       gfx->setCursor(5, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%4dg %3s", glaeser[j].Gewicht,GlasTypArray[glaeser[j].GlasTyp]);
       gfx->print(ausgabe);
       gfx->setCursor(150, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%10.3fkg", glaeser[j].Gewicht * glaeser[j].Count / 1000.0);
       gfx->print(ausgabe);
-      j++;
     }
     if (EncoderButtonTapped()) {
       //verlasse Screen
@@ -773,18 +738,12 @@ void setupCounter(void) {
   i = 1;
   while (i > 0) { //Dritter Screen: Gesamtgewicht
     Abfuellgewicht = 0;
-    j = 0;
     if (digitalRead(button_stop_pin) == HIGH  or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       modus = -1;
       return;
     }
-    while ( j < 5  ) {
-      Abfuellgewicht += glaeser[j].Gewicht * glaeser[j].Count / 1000.0;
-      j++;
-    }
+    for(int j=0;j<5;j++)Abfuellgewicht += glaeser[j].Gewicht * glaeser[j].Count / 1000.0;
     gfx->setFont(Punk_Mono_Bold_600_375);
     sprintf(ausgabe, "Summe");
     x_pos = CenterPosX(ausgabe, 36, 320);
@@ -808,9 +767,7 @@ void setupCounter(void) {
     i = 1;
     while (i > 0) {
       if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-        while (digitalRead(button_stop_pin) == HIGH) {
-          delay(1);
-        }
+        while (digitalRead(button_stop_pin) == HIGH);
         modus = -1;
         return;
       }
@@ -828,11 +785,9 @@ void setupCounter(void) {
         gfx->setCursor(283, 30+((pos+1) * y_offset_tft));
         gfx->print("OK");
         if ( pos == 0) {
-          j = 0;
-          while ( j < 5  ) {
+          for(int j=0;j<5;j++) {
             glaeser[j].Count = 0;
             glaeser[j].TripCount = 0;
-            j++;
           }
           setPreferences();
         }
@@ -855,9 +810,7 @@ void setupTara(void) {
   const char menu[] = "Tarawerte Gläser";
   while (i == 0)  {
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       modus = -1;
       return;
     }
@@ -878,8 +831,7 @@ void setupTara(void) {
     gfx->setCursor(x_pos, 25);
     gfx->println(menu);
     gfx->drawLine(0, 30, 320, 30, TEXT);
-    j = 0;
-    while(j < 5) {
+    for(int j=0;j<5;j++) {
       if (j == getRotariesValue(SW_MENU)) {
         gfx->setTextColor(MARKER);
       }
@@ -902,7 +854,6 @@ void setupTara(void) {
       else {
         gfx->print("  fehlt");
       }
-      j++;
     }
   }
   modus = -1;
@@ -932,9 +883,7 @@ void setupCalibration(void) {
   i = 1;
   while (i > 0) {
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       modus = -1;
       return;
     }
@@ -956,9 +905,7 @@ void setupCalibration(void) {
   i = 1;
   while (i > 0) {
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       modus = -1;
       return;
     }
@@ -1040,9 +987,7 @@ void setupServoWinkel(void) {
   i = 1;
   while (i > 0) {
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       winkel_min  = lastmin;
       winkel_fein = lastfein;
       winkel_max  = lastmax;
@@ -1074,8 +1019,7 @@ void setupServoWinkel(void) {
                 break;
       }
     }
-    int j = 0;
-    while(j < MenuepunkteAnzahl) {
+    for(int j=0; j < MenuepunkteAnzahl; j++) {
       gfx->setTextColor(TEXT);
       if (j == pos and wert_aendern == false) {
         gfx->setTextColor(MARKER);
@@ -1129,13 +1073,10 @@ void setupServoWinkel(void) {
           gfx->setCursor(5, 30+(7 * y_offset_tft));
           gfx->print(menuepunkte[j]);
         }
-        j++;
       }
     
     if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == false) {
-      while(EncoderButtonPressed()) {
-        delay(1);
-      }
+      while(EncoderButtonPressed());
       switch (menuitem) { 
         case 0: initRotaries(SW_MENU, servo_live, 0, 1, 1);
               break;
@@ -1153,9 +1094,7 @@ void setupServoWinkel(void) {
       wert_aendern = true;
     }
     if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == true) {
-      while(EncoderButtonPressed()) {
-        delay(1);
-      }
+      while(EncoderButtonPressed());
       if (servo_live == true) {
         SERVO_WRITE(winkel_min);
       }
@@ -1164,9 +1103,7 @@ void setupServoWinkel(void) {
       gfx->fillRect(170, 30+y_offset_tft+3, 96, 3*y_offset_tft + 2, BACKGROUND);
     }
     if (EncoderButtonPressed() && menuitem == 6) {
-      while(EncoderButtonPressed()) {
-        delay(1);
-      }
+      while(EncoderButtonPressed());
       gfx->setCursor(283, 30+(7 * y_offset_tft));
       gfx->print("OK");
       modus = -1;
@@ -1202,9 +1139,7 @@ void setupAutomatik(void) {
   i = 1;
   while (i > 0) {
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       autostart     = lastautostart;
       autokorrektur = lastautokorrektur;
       kulanz_gr     = lastkulanz;
@@ -1237,8 +1172,7 @@ void setupAutomatik(void) {
       }
     }
     // Menu
-    int j = 0;
-    while(j < MenuepunkteAnzahl) {
+    for(int j=0; j < MenuepunkteAnzahl; j++) {
       gfx->setTextColor(TEXT);
       if (j == pos and wert_aendern == false) {
         gfx->setTextColor(MARKER);
@@ -1298,13 +1232,10 @@ void setupAutomatik(void) {
         gfx->setCursor(5, 30+(7 * y_offset_tft));
         gfx->print(menuepunkte[j]);
       }
-      j++;
     }
     // Menupunkt zum Ändern ausgewählt
     if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == false) { 
-      while(EncoderButtonPressed()) {
-        delay(1);
-      }
+      while(EncoderButtonPressed());
       switch (menuitem) { 
         case 0: rotary_select = SW_MENU;
                 initRotaries(SW_MENU, autostart, 0, 1, 1);
@@ -1326,18 +1257,14 @@ void setupAutomatik(void) {
     }
     // Änderung im Menupunkt übernehmen
     if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == true) {
-      while(EncoderButtonPressed()) {
-        delay(1);
-      }
+      while(EncoderButtonPressed());
       rotary_select = SW_MENU;
       initRotaries(SW_MENU, menuitem, 0, menuitem_used, -1);
       wert_aendern = false;
     }
     // Menu verlassen 
     if (EncoderButtonPressed() && menuitem == 6) {
-      while(EncoderButtonPressed()) {
-        delay(1);
-      }
+      while(EncoderButtonPressed());
       gfx->setCursor(283, 30+(7 * y_offset_tft));
       gfx->print("OK");
       delay(1000);
@@ -1366,15 +1293,12 @@ void setupFuellmenge(void) {
   i = 1;
   while (i > 0) {
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       modus = -1;
       return;
     }
     pos = getRotariesValue(SW_MENU);
-    j = 0;
-    while(j < 5) {
+    for(int j=0; j < 5; j++) {
     if (j == pos) {
         gfx->setTextColor(MARKER);
       }
@@ -1397,7 +1321,6 @@ void setupFuellmenge(void) {
       else if (GlasTypArray[glaeser[j].GlasTyp] == "SPZ") {
         gfx->print("Spezial");
       }
-      j++;
     }
     if (EncoderButtonTapped()) { // Füllmenge gewählt
       i = 0;
@@ -1411,8 +1334,7 @@ void setupFuellmenge(void) {
       return;
     }
     glaeser[pos].Gewicht = step2weight(getRotariesValue(SW_MENU));
-    j = 0;
-    while(j < 5) {
+    for(int j=0; j < 5; j++) {
       gfx->setCursor(10, 30+((j+1) * y_offset_tft));
       if (j == pos) {
         if (wert_old != String(glaeser[j].Gewicht)) {
@@ -1437,7 +1359,6 @@ void setupFuellmenge(void) {
       else if (GlasTypArray[glaeser[j].GlasTyp] == "SPZ") {
         gfx->print("Spezial");
       }
-      j++;
     }
     if (EncoderButtonTapped()) { // Gewicht bestätigt
       i = 0;
@@ -1447,15 +1368,12 @@ void setupFuellmenge(void) {
   initRotaries(SW_MENU, glaeser[pos].GlasTyp, 0, sizeof(GlasTypArray)/sizeof(GlasTypArray[0]) - 1, 1);
   while (i > 0){ 
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       modus = -1;
       return;
     }
     glaeser[pos].GlasTyp = getRotariesValue(SW_MENU);
-    j = 0;
-    while(j < 5) {
+    for(int j=0;j<5;j++) {
       gfx->setCursor(10, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%4dg", glaeser[j].Gewicht);
       gfx->print(ausgabe);
@@ -1480,12 +1398,9 @@ void setupFuellmenge(void) {
         gfx->print("Spezial");
       }
       gfx->setTextColor(TEXT);
-      j++;
     }
     if (EncoderButtonTapped()) { //GlasTyp bestätigt
-      while(EncoderButtonTapped()) {
-        delay(1);
-      }
+      while(EncoderButtonTapped());
       i = 0;
     }
   }
@@ -1519,9 +1434,7 @@ void setupParameter(void) {
   i = 1;
   while (i > 0) {
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       buzzermode = lastbuzzer;
       ledmode = lastled;
       showlogo = lastlogo;
@@ -1566,8 +1479,7 @@ void setupParameter(void) {
       change_scheme = false;
       change_marker = true;
     }
-    int j = 0;
-    while(j < MenuepunkteAnzahl) {
+    for(int j=0;j < MenuepunkteAnzahl;j++) {
       gfx->setTextColor(TEXT);
       if (j == pos and wert_aendern == false) {
         gfx->setTextColor(MARKER);
@@ -1636,13 +1548,10 @@ void setupParameter(void) {
         gfx->setCursor(5, 30+(7 * y_offset_tft));
         gfx->print(menuepunkte[j]);
       }
-      j++;
     }
     // Menupunkt zum Ändern ausgewählt
     if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == false) {
-      while(EncoderButtonPressed()) {
-        delay(1);
-      } 
+      while(EncoderButtonPressed());
       switch (menuitem) { 
         case 0: initRotaries(SW_MENU, buzzermode, 0, 1, 1);
                 break;
@@ -1662,17 +1571,13 @@ void setupParameter(void) {
     }
     // Änderung im Menupunkt übernehmen
     if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == true) {
-      while(EncoderButtonPressed()) {
-        delay(1);
-      }
+      while(EncoderButtonPressed());
       initRotaries(SW_MENU, menuitem, 0, menuitem_used, -1);
       wert_aendern = false;
     }
     // Menu verlassen 
     if (EncoderButtonPressed() && menuitem == 6) {
-      while(EncoderButtonPressed()) {
-        delay(1);
-      }
+      while(EncoderButtonPressed());
       gfx->setCursor(283, 30+(7 * y_offset_tft));
       gfx->print("OK");
       delay(1000);
@@ -1699,15 +1604,12 @@ void setupClearPrefs(void) {
   i = 1;
   while (i > 0) {
     if (digitalRead(button_stop_pin) == HIGH  or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       modus = -1;
       return;
     }
     pos = getRotariesValue(SW_MENU);
-    int j = 0;
-    while(j < MenuepunkteAnzahl) {
+    for(int j=0;j<MenuepunkteAnzahl;j++) {
       if (j == pos) {
         gfx->setTextColor(MARKER);
       }
@@ -1722,7 +1624,6 @@ void setupClearPrefs(void) {
         gfx->setCursor(10, 30+(7 * y_offset_tft));
         gfx->print(menuepunkte[j]);
       }
-      j++;
     }
     if (EncoderButtonTapped()) {  
       if (pos == 0) {
@@ -1758,7 +1659,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
   String quetschhan           = "zu";
   bool cal_done = false;
   int cal_winkel = 0;
-  int j = 0;
+  int j=0;
   int k = 0;
   int y_offset_tft = 28;
   bool change = false;
@@ -1778,9 +1679,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
   i = 1;
   while (i > 0) {
     if (digitalRead(button_stop_pin) == HIGH  or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH) {
-        delay(1);
-      }
+      while (digitalRead(button_stop_pin) == HIGH);
       current_servo = lastcurrent;
       winkel_min = lastwinkel_min;
       show_current = lastshow_current;
@@ -1877,9 +1776,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
       a++;
     }
     if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == false) {
-      while(EncoderButtonPressed()) {
-        delay(1);
-      } 
+      while(EncoderButtonPressed());
       switch (menuitem) { 
         case 0: initRotaries(SW_MENU, current_servo, 0, 1500, 50);
                 break;
@@ -1890,17 +1787,13 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
     }
     // Änderung im Menupunkt übernehmen
     if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == true) {
-      while(EncoderButtonPressed()) {
-        delay(1);
-      }
+      while(EncoderButtonPressed());
       initRotaries(SW_MENU, menuitem, 0, menuitem_used, -1);
       wert_aendern = false;
     }
     // Menu verlassen 
     if (EncoderButtonPressed() && menuitem == 6) {
-      while(EncoderButtonPressed()) {
-        delay(1);
-      }
+      while(EncoderButtonPressed());
       gfx->setCursor(283, 30+(7 * y_offset_tft));
       gfx->print("OK");
       delay(1000);
@@ -1962,30 +1855,23 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
         k = 1;
       }
       if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == false) {
-        while(EncoderButtonPressed()) {
-          delay(1);
-        } 
+        while(EncoderButtonPressed());
         wert_aendern = true;
       }
       // Änderung im Menupunkt übernehmen
       if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == true) {
-        while(EncoderButtonPressed()) {
-          delay(1);
-        }
+        while(EncoderButtonPressed());
         initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
         wert_aendern = false;
       }
       //verlassen
       if ((EncoderButtonPressed() && menuitem == 6) or digitalRead(button_stop_pin) == HIGH) {
-        while(EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH) {
-          delay(1);
-        }
+        while(EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH);
         gfx->fillScreen(BACKGROUND);
         x_pos = CenterPosX(title, 14, 320);
         gfx->setCursor(x_pos, 25);
         gfx->println(title);
         gfx->drawLine(0, 30, 320, 30, TEXT);
-        j = 0;
         wert_aendern = false;
         menuitem_used = 2;
         initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
@@ -2053,16 +1939,13 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
           }
           //verlassen
           if (EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH) {
-            while(EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH) {
-              delay(1);
-            }
+            while(EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH);
             gfx->fillScreen(BACKGROUND);
             gfx->setTextColor(TEXT);
             x_pos = CenterPosX(title, 14, 320);
             gfx->setCursor(x_pos, 25);
             gfx->println(title);
             gfx->drawLine(0, 30, 320, 30, TEXT);
-            j = 0;
             k = 0;
             winkel_min = lastwinkel_min;
             cal_done = true;
@@ -2099,10 +1982,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
           }
           //verlassen
           if (digitalRead(button_stop_pin) == HIGH) {
-            while(digitalRead(button_stop_pin) == HIGH) {
-              delay(1);
-            }
-            j = 0;
+            while(digitalRead(button_stop_pin) == HIGH);
             k = 0;
             wert_aendern = false;
             menuitem_used = 2;
@@ -2115,7 +1995,6 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
             gfx->drawLine(0, 30, 320, 30, TEXT);
           }
           if (EncoderButtonTapped()) {
-            j = 0;
             k = 0;
             modus = -1;
             wert_aendern = false;
@@ -2343,9 +2222,7 @@ void processAutomatik(void) {
   // wir starten nur, wenn das Tara für die Füllmenge gesetzt ist!
   // Ein erneuter Druck auf Start erzwingt die Aktivierung des Servo
   if (digitalRead(button_start_pin) == HIGH && tara > 0) {
-    while(digitalRead(button_start_pin) == HIGH) {
-       delay(1);
-    }
+    while(digitalRead(button_start_pin) == HIGH);
     if (auto_aktiv == 1) {
       erzwinge_servo_aktiv = 1;
       #ifdef isDebug
@@ -3057,9 +2934,8 @@ void setup() {
   setRotariesValue(SW_MENU,      fmenge_index);
 }
 
-void loop() {
-  rotating = true;     // debounce Management
-  //INA219 Messung
+void loop() 
+{ //INA219 Messung
   if (ina219_installed and inawatchdog == 1 and (current_servo > 0 or show_current == 1) and (modus == MODE_HANDBETRIEB or modus == MODE_AUTOMATIK)) {
     ina219_measurement();
   }

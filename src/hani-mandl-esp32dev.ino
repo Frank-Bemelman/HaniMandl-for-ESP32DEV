@@ -16,18 +16,9 @@
 String version = "V1.0 by F.";
 
 //
-// Usereinstellung
-//
-// Könnt ihr auf eins lassen. User 2 und User 3 haben andere Glaseinstellungen
-//
-#define USER 1                    // 1 = Hanimandl Standart (ist die default einstellung so wie Ihr es gewohnt seit)
-                                  // 2 = Gerold (Wird bei euch nicht funktionieren, da die Logos fehlen im ResPos)
-                                  // 3 = Roli
-
-//
 // Hier den Code auf die verwendete Hardware einstellen
 //
-#define HARDWARE_LEVEL 1          // 1 = ESP32-WROOM 38Pin Connector
+
 #define SCALE_TYP 2               // 1 = 2kg Wägezelle
                                   // 2 = 5kg Wägezelle
 #define SERVO_ERWEITERT           // definieren, falls die Hardware mit dem alten Programmcode mit Poti aufgebaut wurde oder der Servo zu wenig fährt
@@ -68,9 +59,6 @@ String version = "V1.0 by F.";
   #define SERVO_WRITE(n)     servo.write(n)
 #endif
 
-// Rotary Encoder Taster zieht Pegel auf Low
-#define SELECT_SW outputSW
-#define SELECT_PEGEL LOW
 
 // Betriebsmodi 
 #define MODE_SETUP       0
@@ -105,42 +93,34 @@ Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
 #include "./Fonts/Checkbox.h"                         //A=OK, B=nOK
 
 //Logos
-#if USER == 2
-  #include "./Logos/LogoGeroldTFT.h"
-#elif USER == 3
-  #include "./Logos/LogoRoliTFT.h"
-#else
-  #include "./Logos/LogoBieneTFT.h"
-#endif
+#include "./Logos/LogoBieneTFT.h"
 
 
-// ** Definition der pins 
-// ----------------------
+// Pin Definitions
+// ESP32-DEVKIT 30 Pins Connector
 
-// ESP32-DEVKIT 30Pin Connector
-//
-#if HARDWARE_LEVEL == 1
-  // Rotary Encoder
-  const int outputA  = 33;
-  const int outputB  = 26;
-  const int outputSW = 32;
-  // Servo
-  const int servo_pin = 2;
-  // 3x Schalter Ein 1 - Aus - Ein 2, VCC pins wurden direkt auf VCC gelegt
-  const int switch_betrieb_pin = 15;
-  const int switch_setup_pin   = 4;
-  // Taster, VCC pins wurden direkt auf VCC gelegt
-  const int button_start_pin     = 12;
-  const int button_stop_pin      = 27;
-  // Wägezelle-IC 
-  const int hx711_sck_pin = 17;
-  const int hx711_dt_pin  = 35;
-  // Buzzer and LED
-  static int buzzer_pin = 25;
-  int led_pin = 0;
-#else
-  #error Hardware Level nicht definiert! Korrektes #define setzen!
-#endif
+// Rotary Encoder
+#define EncoderA 33
+#define EncoderB 26
+#define EncoderButton 32
+
+//const int outputA  = 33;
+//const int outputB  = 26;
+//const int outputSW = 32;
+// Servo
+const int servo_pin = 2;
+// 3x Schalter Ein 1 - Aus - Ein 2, VCC pins wurden direkt auf VCC gelegt
+const int switch_betrieb_pin = 15;
+const int switch_setup_pin   = 4;
+// Taster, VCC pins wurden direkt auf VCC gelegt
+const int button_start_pin     = 12;
+const int button_stop_pin      = 27;
+// Wägezelle-IC 
+const int hx711_sck_pin = 17;
+const int hx711_dt_pin  = 35;
+// Buzzer and LED
+static int buzzer_pin = 25;
+int led_pin = 0;
 
 Servo servo;
 HX711 scale;
@@ -168,25 +148,7 @@ struct glas {
   int TripCount;
   int Count;
 };
-#if USER == 2
-const char *GlasTypArray[2] = {"TOF", "SPZ"};
-struct glas glaeser[5] = { 
-                            {50, 0, -9999, 0, 0},
-                            {125, 0, -9999, 0, 0},
-                            {250, 0, -9999, 0, 0},
-                            {500, 0, -9999, 0, 0},
-                            {1000, 0, -9999, 0, 0} 
-                          };
-#elif USER == 3
-const char *GlasTypArray[1] = {"TOF"};
-struct glas glaeser[5] = { 
-                            {250, 0, -9999, 0, 0},
-                            {500, 0, -9999, 0, 0},
-                            {0, 0, -9999, 0, 0},
-                            {0, 0, -9999, 0, 0},
-                            {0, 0, -9999, 0, 0} 
-                          };
-#else
+
 const char *GlasTypArray[3] = {"DIB", "TOF", "DEE"};
 struct glas glaeser[5] = { 
                             {125, 0, -9999, 0, 0},
@@ -195,7 +157,6 @@ struct glas glaeser[5] = {
                             {500, 1, -9999, 0, 0},
                             {500, 0, -9999, 0, 0} 
                           };
-#endif
 
 // Allgemeine Variablen
 int i;                              // allgemeine Zählvariable
@@ -219,13 +180,7 @@ int winkel_max = 85;                // konfigurierbar im Setup
 int winkel_fein = 35;               // konfigurierbar im Setup
 float fein_dosier_gewicht = 60;     // float wegen Berechnung des Schliesswinkels
 int servo_aktiv = 0;                // Servo aktivieren ja/nein
-#if USER == 2
-int kali_gewicht = 2000;            // frei wählbares Gewicht zum kalibrieren
-#elif USER == 3
 int kali_gewicht = 500;             // frei wählbares Gewicht zum kalibrieren
-#else
-int kali_gewicht = 500;             // frei wählbares Gewicht zum kalibrieren
-#endif
 char ausgabe[30];                   // Fontsize 12 = 13 Zeichen maximal in einer Zeile
 int modus = -1;                     // Bei Modus-Wechsel den Servo auf Minimum fahren
 int auto_aktiv = 0;                 // Für Automatikmodus - System ein/aus?
@@ -337,17 +292,19 @@ void IRAM_ATTR isr1() {
   }
 }
 
-// Rotary Encoder. Zählt in eine von drei Datenstrukturen: 
-// SW_WINKEL    = Einstellung des Servo-Winkels
-// SW_KORREKTUR = Korrekturfaktor für Füllgewicht
-// SW_MENU      = Zähler für Menuauswahlen  
+// Rotary Encoder. Counts in one of three rotary structures
+// SW_WINKEL    = value set for servo angle
+// SW_KORREKTUR = correction factor for filling weight
+// SW_MENU      = counter for menu selection or parameter setting
 void IRAM_ATTR isr2() {
   static int aState;
-  static int aLastState = 2;  // reale Werte sind 0 und 1
-  aState = digitalRead(outputA); // Reads the "current" state of the outputA
+  static int bState;
+  static int aLastState; 
+  aState = digitalRead(EncoderA); // Reads the "current" state of the encoder
+  bState = digitalRead(EncoderB); // Reads the "current" state of the encoder
   if (aState != aLastState) {     
     // If the outputB state is different to the outputA state, that means the encoder is rotating clockwise
-    if (digitalRead(outputB) != aState) {
+    if (aState != bState) {
       rotaries[rotary_select].Value -= rotaries[rotary_select].Step;
     }
     else {    // counter-clockwise
@@ -355,14 +312,8 @@ void IRAM_ATTR isr2() {
     }
     rotaries[rotary_select].Value = constrain( rotaries[rotary_select].Value, rotaries[rotary_select].Minimum, rotaries[rotary_select].Maximum);
     rotating = false;
-    #ifdef isDebug
-      #if isDebug >= 4
-        Serial.print(" Rotary Value changed to ");
-        Serial.println(getRotariesValue(rotary_select));
-      #endif
-    #endif
   }
-  aLastState = aState; // Updates the previous state of the outputA with the current state
+  aLastState = aState; 
 }
 
 //
@@ -393,6 +344,24 @@ void initRotaries( int rotary_mode, int rotary_value, int rotary_min, int rotary
 }
 // Ende Funktionen für den Rotary Encoder
 //
+boolean EncoderButtonTapped(void)
+{ if (digitalRead(EncoderButton) == LOW) {
+    while(digitalRead(EncoderButton) == LOW) {
+    delay(1);
+    }
+    return true;
+  }  
+  else return false;
+}    
+
+boolean EncoderButtonPressed(void)
+{ if (digitalRead(EncoderButton) == LOW) {
+    return true;
+  }
+  else return false;
+}  
+
+
 
 void getPreferences(void) {
   preferences.begin("EEPROM", false);                     // Parameter aus dem EEPROM lesen
@@ -421,16 +390,8 @@ void getPreferences(void) {
                        winkel_min + winkel_max + winkel_fein + buzzermode + ledmode + showlogo + showcredits + 
                        kali_gewicht + current_servo + glastoleranz + show_current + color_scheme + color_marker;
   i = 0;
-  #if USER == 2
-    int ResetGewichte[] = {50,125,250,500,1000,};
-    int ResetGlasTyp[] = {0,0,0,0,0,};
-  #elif USER == 3
-    int ResetGewichte[] = {250,500,0,0,0,};
-    int ResetGlasTyp[] = {0,0,0,0,0,};
-  #else
-    int ResetGewichte[] = {125,250,250,500,500,};
-    int ResetGlasTyp[] = {0,1,2,1,0,};
-  #endif
+  int ResetGewichte[] = {125,250,250,500,500,};
+  int ResetGlasTyp[] = {0,1,2,1,0,};
   while( i < 5) {
     sprintf(ausgabe, "Gewicht%d", i);
     glaeser[i].Gewicht = preferences.getInt(ausgabe, ResetGewichte[i]);
@@ -640,11 +601,8 @@ void setupTripCounter(void) {
       gfx->print(ausgabe);
       j++;
     }
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonTapped()) {
       //verlasse Screen
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
-        delay(1);
-      }
       i = 0;
       gfx->fillRect(0, 31, 320, 209, BACKGROUND);
     }
@@ -668,11 +626,8 @@ void setupTripCounter(void) {
       gfx->print(ausgabe);
       j++;
     }
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonTapped()) {
       //verlasse Screen
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
-        delay(1);
-      }
       i = 0;
       gfx->fillRect(0, 31, 320, 209, BACKGROUND);
     }
@@ -702,9 +657,9 @@ void setupTripCounter(void) {
     gfx->setCursor(x_pos, 184);
     gfx->print(ausgabe);
     gfx->setFont(Punk_Mono_Bold_240_150);
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (digitalRead(EncoderButton) == LOW) {
       //verlasse Screen
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+      while(digitalRead(EncoderButton) == LOW) {
         delay(1);
       }
       i = 0;
@@ -733,7 +688,7 @@ void setupTripCounter(void) {
       if (pos == 1) {gfx->setTextColor(MARKER);}
       else {gfx->setTextColor(TEXT);}
       gfx->print("Abbrechen");
-      if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
+      if (digitalRead(EncoderButton) == LOW) {
         gfx->setTextColor(MARKER);
         gfx->setCursor(283, 30+((pos+1) * y_offset_tft));
         gfx->print("OK");
@@ -784,11 +739,8 @@ void setupCounter(void) {
       gfx->print(ausgabe);
       j++;
     }
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonTapped()) {
       //verlasse Screen
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
-        delay(1);
-      }
       i = 0;
       gfx->fillRect(0, 31, 320, 209, BACKGROUND);
     }
@@ -812,11 +764,8 @@ void setupCounter(void) {
       gfx->print(ausgabe);
       j++;
     }
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonTapped()) {
       //verlasse Screen
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
-        delay(1);
-      }
       i = 0;
       gfx->fillRect(0, 31, 320, 209, BACKGROUND);
     }
@@ -846,11 +795,8 @@ void setupCounter(void) {
     gfx->setCursor(x_pos, 184);
     gfx->print(ausgabe);
     gfx->setFont(Punk_Mono_Bold_240_150);
-    if ((digitalRead(SELECT_SW)) == SELECT_PEGEL) {
+    if (EncoderButtonTapped()) {
       //verlasse Screen
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
-        delay(1);
-      }
       i = 0;
       gfx->fillRect(0, 31, 320, 209, BACKGROUND);
     }
@@ -877,10 +823,7 @@ void setupCounter(void) {
       if (pos == 1) {gfx->setTextColor(MARKER);}
       else {gfx->setTextColor(TEXT);}
       gfx->print("Abbrechen");
-      if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
-        while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
-          delay(1);
-        }
+      if (EncoderButtonPressed()) {
         gfx->setTextColor(MARKER);
         gfx->setCursor(283, 30+((pos+1) * y_offset_tft));
         gfx->print("OK");
@@ -918,7 +861,7 @@ void setupTara(void) {
       modus = -1;
       return;
     }
-    else if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    else if (EncoderButtonPressed()) {
       tara = int(SCALE_GETUNITS(10));
       if (tara > 20) {                  // Gläser müssen mindestens 20g haben
          glaeser[getRotariesValue(SW_MENU)].Tara = tara;
@@ -995,7 +938,7 @@ void setupCalibration(void) {
       modus = -1;
       return;
     }
-    else if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    else if (EncoderButtonPressed()) {
       scale.set_scale();
       scale.tare(10);
       delay(500);
@@ -1049,7 +992,7 @@ void setupCalibration(void) {
 
       kali_gewicht_old = kali_gewicht;
     }
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonPressed()) {
       gewicht_raw  = scale.get_units(10);
       faktor       = gewicht_raw / kali_gewicht;
       scale.set_scale(faktor);
@@ -1188,8 +1131,9 @@ void setupServoWinkel(void) {
         }
         j++;
       }
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem < menuitem_used  && wert_aendern == false) {
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    
+    if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == false) {
+      while(EncoderButtonPressed()) {
         delay(1);
       }
       switch (menuitem) { 
@@ -1208,8 +1152,8 @@ void setupServoWinkel(void) {
       wert_old = -1;
       wert_aendern = true;
     }
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem < menuitem_used  && wert_aendern == true) {
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == true) {
+      while(EncoderButtonPressed()) {
         delay(1);
       }
       if (servo_live == true) {
@@ -1219,8 +1163,8 @@ void setupServoWinkel(void) {
       wert_aendern = false;
       gfx->fillRect(170, 30+y_offset_tft+3, 96, 3*y_offset_tft + 2, BACKGROUND);
     }
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem == 6) {
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonPressed() && menuitem == 6) {
+      while(EncoderButtonPressed()) {
         delay(1);
       }
       gfx->setCursor(283, 30+(7 * y_offset_tft));
@@ -1357,8 +1301,8 @@ void setupAutomatik(void) {
       j++;
     }
     // Menupunkt zum Ändern ausgewählt
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem < menuitem_used  && wert_aendern == false) { 
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == false) { 
+      while(EncoderButtonPressed()) {
         delay(1);
       }
       switch (menuitem) { 
@@ -1381,8 +1325,8 @@ void setupAutomatik(void) {
       wert_aendern = true;
     }
     // Änderung im Menupunkt übernehmen
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem < menuitem_used  && wert_aendern == true) {
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == true) {
+      while(EncoderButtonPressed()) {
         delay(1);
       }
       rotary_select = SW_MENU;
@@ -1390,8 +1334,8 @@ void setupAutomatik(void) {
       wert_aendern = false;
     }
     // Menu verlassen 
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem == 6) {
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonPressed() && menuitem == 6) {
+      while(EncoderButtonPressed()) {
         delay(1);
       }
       gfx->setCursor(283, 30+(7 * y_offset_tft));
@@ -1455,10 +1399,7 @@ void setupFuellmenge(void) {
       }
       j++;
     }
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL) { // Füllmenge gewählt
-      while((digitalRead(SELECT_SW) == SELECT_PEGEL)) {
-        delay(1);
-      }
+    if (EncoderButtonTapped()) { // Füllmenge gewählt
       i = 0;
     }
   }
@@ -1498,10 +1439,7 @@ void setupFuellmenge(void) {
       }
       j++;
     }
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL) { // Gewicht bestätigt
-      while((digitalRead(SELECT_SW) == SELECT_PEGEL)) {
-        delay(1);
-      }
+    if (EncoderButtonTapped()) { // Gewicht bestätigt
       i = 0;
     }
   }
@@ -1544,8 +1482,8 @@ void setupFuellmenge(void) {
       gfx->setTextColor(TEXT);
       j++;
     }
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL) { //GlasTyp bestätigt
-      while((digitalRead(SELECT_SW) == SELECT_PEGEL)) {
+    if (EncoderButtonTapped()) { //GlasTyp bestätigt
+      while(EncoderButtonTapped()) {
         delay(1);
       }
       i = 0;
@@ -1701,8 +1639,8 @@ void setupParameter(void) {
       j++;
     }
     // Menupunkt zum Ändern ausgewählt
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem < menuitem_used  && wert_aendern == false) {
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == false) {
+      while(EncoderButtonPressed()) {
         delay(1);
       } 
       switch (menuitem) { 
@@ -1723,16 +1661,16 @@ void setupParameter(void) {
       wert_aendern = true;
     }
     // Änderung im Menupunkt übernehmen
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem < menuitem_used  && wert_aendern == true) {
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == true) {
+      while(EncoderButtonPressed()) {
         delay(1);
       }
       initRotaries(SW_MENU, menuitem, 0, menuitem_used, -1);
       wert_aendern = false;
     }
     // Menu verlassen 
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem == 6) {
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonPressed() && menuitem == 6) {
+      while(EncoderButtonPressed()) {
         delay(1);
       }
       gfx->setCursor(283, 30+(7 * y_offset_tft));
@@ -1786,10 +1724,7 @@ void setupClearPrefs(void) {
       }
       j++;
     }
-    if ((digitalRead(SELECT_SW)) == SELECT_PEGEL) {  
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
-        delay(1);
-      }
+    if (EncoderButtonTapped()) {  
       if (pos == 0) {
         preferences.begin("EEPROM", false);
         preferences.clear();
@@ -1941,8 +1876,8 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
       }
       a++;
     }
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem < menuitem_used  && wert_aendern == false) {
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == false) {
+      while(EncoderButtonPressed()) {
         delay(1);
       } 
       switch (menuitem) { 
@@ -1954,16 +1889,16 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
       wert_aendern = true;
     }
     // Änderung im Menupunkt übernehmen
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem < menuitem_used  && wert_aendern == true) {
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == true) {
+      while(EncoderButtonPressed()) {
         delay(1);
       }
       initRotaries(SW_MENU, menuitem, 0, menuitem_used, -1);
       wert_aendern = false;
     }
     // Menu verlassen 
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem == 6) {
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+    if (EncoderButtonPressed() && menuitem == 6) {
+      while(EncoderButtonPressed()) {
         delay(1);
       }
       gfx->setCursor(283, 30+(7 * y_offset_tft));
@@ -2026,23 +1961,23 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
         cal_winkel = 0;
         k = 1;
       }
-      if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem < menuitem_used  && wert_aendern == false) {
-        while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+      if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == false) {
+        while(EncoderButtonPressed()) {
           delay(1);
         } 
         wert_aendern = true;
       }
       // Änderung im Menupunkt übernehmen
-      if (digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem < menuitem_used  && wert_aendern == true) {
-        while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
+      if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == true) {
+        while(EncoderButtonPressed()) {
           delay(1);
         }
         initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
         wert_aendern = false;
       }
       //verlassen
-      if ((digitalRead(SELECT_SW) == SELECT_PEGEL && menuitem == 6) or digitalRead(button_stop_pin) == HIGH) {
-        while(digitalRead(SELECT_SW) == SELECT_PEGEL or digitalRead(button_stop_pin) == HIGH) {
+      if ((EncoderButtonPressed() && menuitem == 6) or digitalRead(button_stop_pin) == HIGH) {
+        while(EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH) {
           delay(1);
         }
         gfx->fillScreen(BACKGROUND);
@@ -2117,8 +2052,8 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
             scaletime = millis();
           }
           //verlassen
-          if ((digitalRead(SELECT_SW) == SELECT_PEGEL) or digitalRead(button_stop_pin) == HIGH) {
-            while(digitalRead(SELECT_SW) == SELECT_PEGEL or digitalRead(button_stop_pin) == HIGH) {
+          if (EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH) {
+            while(EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH) {
               delay(1);
             }
             gfx->fillScreen(BACKGROUND);
@@ -2179,10 +2114,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
             gfx->println(title);
             gfx->drawLine(0, 30, 320, 30, TEXT);
           }
-          if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
-            while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
-              delay(1);
-            }
+          if (EncoderButtonTapped()) {
             j = 0;
             k = 0;
             modus = -1;
@@ -2271,10 +2203,7 @@ void processSetup(void) {
       menuitem_old = menuitem;
     }
     lastpos = menuitem;
-    if (digitalRead(SELECT_SW) == SELECT_PEGEL) {
-      while(digitalRead(SELECT_SW) == SELECT_PEGEL) {
-        delay(1);
-      }
+    if (EncoderButtonTapped()) {
     #ifdef isDebug 
       Serial.print("Setup Position: ");
       Serial.println(menuitem);
@@ -2850,7 +2779,7 @@ void processHandbetrieb(void) {
   if ((digitalRead(button_stop_pin)) == HIGH) {
     servo_aktiv = 0;
   }
-  if ((digitalRead(outputSW)) == LOW) {
+  if ((digitalRead(EncoderButton)) == LOW) {
       tara = SCALE_GETUNITS(SCALE_READS);
   }
   if (servo_aktiv == 1) {
@@ -2982,11 +2911,11 @@ void setup() {
     #endif
   }
   // Rotary
-  pinMode(outputSW, INPUT_PULLUP);
-  attachInterrupt(outputSW, isr1, FALLING);
-  pinMode(outputA,INPUT);
-  pinMode(outputB,INPUT);
-  attachInterrupt(outputA, isr2, CHANGE);
+  pinMode(EncoderButton, INPUT_PULLUP);
+  attachInterrupt(EncoderButton, isr1, FALLING);
+  pinMode(EncoderA,INPUT);
+  pinMode(EncoderB,INPUT);
+  attachInterrupt(EncoderA, isr2, CHANGE);
   // Buzzer
   pinMode(buzzer_pin, OUTPUT);
   pinMode(led_pin, OUTPUT);
@@ -3174,19 +3103,7 @@ void print_credits() {
   gfx->setCursor(90, 8*offset+10);
   gfx->print("J. Bruker");
 }
-#if USER == 2
-void print_logo() {
-  gfx->drawXBitmap(0, 0, LogoGeroldTFT, 320, 240, TEXT);
-}
-#elif USER == 3
-void print_logo() {
-  gfx->drawXBitmap(0, 0, LogoRoliTFT, 320, 240, YELLOW);
-  gfx->setTextColor(YELLOW);
-  gfx->setFont(Punk_Mono_Bold_200_125);
-  gfx->setCursor(232, 220);
-  gfx->print(version);
-}
-#else
+
 void print_logo() {
   gfx->fillScreen(BACKGROUND);
   gfx->drawXBitmap(60, 10, LogoBieneTFT, 200, 160, TEXT);
@@ -3200,7 +3117,6 @@ void print_logo() {
   gfx->setCursor(255, 180);
   gfx->print(version);
 }
-#endif
 
 // Wir nutzen einen aktiven Summer, damit entfällt die tone Library, die sich sowieso mit dem Servo beisst.
 void buzzer(byte type) {

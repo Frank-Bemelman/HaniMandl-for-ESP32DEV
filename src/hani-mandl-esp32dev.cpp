@@ -11,9 +11,21 @@
 #include <Preferences.h>            /* aus dem BSP von expressif, wird verfügbar wenn das richtige Board ausgewählt ist */
 #include <nvs_flash.h>              /* aus dem BSP von expressif, wird verfügbar wenn das richtige Board ausgewählt ist */
 #include <Arduino_GFX_Library.h>    /* aus dem Bibliotheksverwalter */
+#include <TFT_eSPI.h>               // more versatile display library
+
+#include "hani.h"
+#include "Arialbd72.h"
+
 
 // Version
 String version = "V1.0 by F.";
+extern void SetupMyDisplay(void);
+extern void TFT_line_print(int line, const char *content);
+extern void TFT_line_color(int line, int textcolor, int backgroundcolor);
+extern bool bScrollNow;
+extern bool bUpdateDisplay;
+extern int NewHaniDisplayMode;
+extern int NewWeight;
 
 //
 // Hier den Code auf die verwendete Hardware einstellen
@@ -74,9 +86,14 @@ String version = "V1.0 by F.";
 // INA 219
 Adafruit_INA219 ina219;
 
-// Display
+// Display ST7789
+// TFT_MISO=19  ; not available on my ST7789, combined with SDA MOSI=23
+//TFT_MOSI=23  ; SDA of ST7789
+//TFT_SCLK=18  ; SCL of ST7789
+
 Arduino_DataBus *bus = new Arduino_HWSPI(13 /* DC */, 5 /* CS */);
 Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
+//Arduino_GFX *gfx;
 
 // Fonts
 #include "./Fonts/Punk_Mono_Bold_120_075.h"           //10 x 7
@@ -95,6 +112,10 @@ Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
 //Logos
 #include "./Logos/LogoBieneTFT.h"
 
+// new display control witt TFT_eSPI
+// display model and connections defined in platformio.ini
+// no changes made to TFT_ESPI library
+extern TFT_eSPI tft;  // invoke TFT_eSPI library in hani-display.cpp
 
 // Pin Definitions
 // ESP32-DEVKIT 30 Pins Connector
@@ -203,7 +224,7 @@ int show_current = 0;               // 0 = aus, 1 = ein / Zeige den Strom an auc
 int inawatchdog = 1;                // 0 = aus, 1 = ein / wird benötigt um INA messung auszusetzen
 int offset_winkel = 0;              // Offset in Grad vom Schlieswinkel wen der Servo Übersrom hatte (max +3Grad vom eingestelten Winkel min)
 int color_scheme = 0;               // 0 = dunkel, 1 = hell / Wechsel vom color scheme für den TFT Display
-int color_marker = 2;               // Farbe für den Marker für das TFT Display
+int color_marker_idx = 3;               // Farbe für den Marker für das TFT Display
 
 //Variablen für TFT update
 bool no_ina;
@@ -221,14 +242,13 @@ int rotary_select_alt;
 int autokorr_gr_alt;
 
 //Color Scheme für den TFT Display
-unsigned long  BACKGROUND;
-unsigned long  TEXT;
-unsigned long  MENU_POS1;
-unsigned long  MENU_POS2;
-unsigned long  MENU_POS3;
-unsigned long  MENU_POS4;
-unsigned long  MARKER;
-//#define MARKER 0x1AF6
+unsigned long  COLOR_BACKGROUND;
+unsigned long  COLOR_TEXT;
+unsigned long  COLOR_MENU_POS1;
+unsigned long  COLOR_MENU_POS2;
+unsigned long  COLOR_MENU_POS3;
+unsigned long  COLOR_MENU_POS4;
+unsigned long  COLOR_MARKER;
 
 // local function declarations
 int CenterPosX(const char a[], float font_width, int display_width);
@@ -244,36 +264,36 @@ void print_logo(void);
 
 void tft_colors() {
   if (color_scheme == 0) {          //dunkel
-    BACKGROUND  = 0x0000;
-    TEXT        = 0xFFFF;
-    MENU_POS1   = 0x73AF;
-    MENU_POS2   = 0x5AEC;
-    MENU_POS3   = 0x39C8;
-    MENU_POS4   = 0x20E6;
+    COLOR_BACKGROUND  = TFT_BLACK;
+    COLOR_TEXT        = TFT_WHITE;
+    COLOR_MENU_POS1   = 0x73AF;
+    COLOR_MENU_POS2   = 0x5AEC;
+    COLOR_MENU_POS3   = 0x39C8;
+    COLOR_MENU_POS4   = 0x20E6;
   }
   else {                            //hell
-    BACKGROUND  = 0xFFFF;
-    TEXT        = 0x0000;
-    MENU_POS1   = 0x1082;
-    MENU_POS2   = 0x2104;
-    MENU_POS3   = 0x3166;
-    MENU_POS4   = 0x4208;
+    COLOR_BACKGROUND  = TFT_WHITE;
+    COLOR_TEXT        = TFT_BLACK;
+    COLOR_MENU_POS1   = 0x1082;
+    COLOR_MENU_POS2   = 0x2104;
+    COLOR_MENU_POS3   = 0x3166;
+    COLOR_MENU_POS4   = 0x4208;
   }
 }
 
 void tft_marker() {                
-  if (color_marker == 0)                              {MARKER = 0x05ff;}
-  else if (color_marker == 1)                         {MARKER = 0x021f;}
-  else if (color_marker == 2)                         {MARKER = 0x001f;}
-  else if (color_marker == 3)                         {MARKER = 0x4851;}
-  else if (color_marker == 4)                         {MARKER = 0xc050;}
-  else if (color_marker == 5)                         {MARKER = 0xf800;}
-  else if (color_marker == 6)                         {MARKER = 0xfbc0;}
-  else if (color_marker == 7)                         {MARKER = 0xfde0;}
-  else if (color_marker == 8)                         {MARKER = 0xd6e1;}
-  else if (color_marker == 9)                         {MARKER = 0xffe0;}
-  else if (color_marker == 10)                        {MARKER = 0x2724;}
-  else if (color_marker == 11)                        {MARKER = 0x0da1;}
+  if (color_marker_idx == 0)                              {COLOR_MARKER = 0x05ff;}
+  else if (color_marker_idx == 1)                         {COLOR_MARKER = 0x021f;}
+  else if (color_marker_idx == 2)                         {COLOR_MARKER = 0x001f;}
+  else if (color_marker_idx == 3)                         {COLOR_MARKER = 0x4851;}
+  else if (color_marker_idx == 4)                         {COLOR_MARKER = 0xc050;}
+  else if (color_marker_idx == 5)                         {COLOR_MARKER = 0xf800;}
+  else if (color_marker_idx == 6)                         {COLOR_MARKER = 0xfbc0;}
+  else if (color_marker_idx == 7)                         {COLOR_MARKER = 0xfde0;}
+  else if (color_marker_idx == 8)                         {COLOR_MARKER = 0xd6e1;}
+  else if (color_marker_idx == 9)                         {COLOR_MARKER = 0xffe0;}
+  else if (color_marker_idx == 10)                        {COLOR_MARKER = 0x2724;}
+  else if (color_marker_idx == 11)                        {COLOR_MARKER = 0x0da1;}
 }
 
 // Rotary Taster. Der Interrupt kommt nur im Automatikmodus zum Tragen und nur wenn der Servo inaktiv ist.
@@ -390,10 +410,10 @@ void getPreferences(void) {
   current_servo   = preferences.getUInt("current_servo", current_servo);
   show_current    = preferences.getUInt("show_current", show_current);
   color_scheme    = preferences.getUInt("color_scheme", color_scheme);
-  color_marker    = preferences.getUInt("color_marker", color_marker);
+  color_marker_idx    = preferences.getUInt("color_marker_idx", color_marker_idx);
   preferences_chksum = faktor + pos + gewicht_leer + korrektur + autostart + autokorrektur + kulanz_gr + fmenge_index +
                        winkel_min + winkel_max + winkel_fein + buzzermode + ledmode + showlogo + showcredits + 
-                       kali_gewicht + current_servo + glastoleranz + show_current + color_scheme + color_marker;
+                       kali_gewicht + current_servo + glastoleranz + show_current + color_scheme + color_marker_idx;
   i = 0;
   int ResetGewichte[] = {125,250,250,500,500,};
   int ResetGlasTyp[] = {0,1,2,1,0,};
@@ -435,7 +455,7 @@ void getPreferences(void) {
     Serial.print("showcredits = ");     Serial.println(showcredits);
     Serial.print("current_servo = ");   Serial.println(current_servo);
     Serial.print("color_scheme = ");    Serial.println(color_scheme);
-    Serial.print("color_marker = ");    Serial.println(color_marker);
+    Serial.print("color_marker_idx = ");    Serial.println(color_marker_idx);
     Serial.print("kali_gewicht = ");    Serial.println(kali_gewicht);
     Serial.print("glastoleranz = ");    Serial.println(glastoleranz);
     Serial.print("show_current = ");    Serial.println(show_current);
@@ -493,7 +513,7 @@ void setPreferences(void) {
   preferences_newchksum = faktor + gewicht_leer + korrektur + autostart + autokorrektur +
                           fmenge_index + winkel_min + winkel_max + winkel_fein + kulanz_gr +
                           buzzermode + ledmode + showlogo + showcredits + current_servo + kali_gewicht + 
-                          glastoleranz + show_current + color_scheme + color_marker;
+                          glastoleranz + show_current + color_scheme + color_marker_idx;
   i = 0;
   while( i < 5 ) {
     preferences_newchksum += glaeser[i].Gewicht;
@@ -527,7 +547,7 @@ void setPreferences(void) {
   preferences.putUInt("current_servo", current_servo);
   preferences.putUInt("show_current", show_current);
   preferences.putUInt("color_scheme", color_scheme);
-  preferences.putUInt("color_marker", color_marker);
+  preferences.putUInt("color_marker_idx", color_marker_idx);
   i = 0;
   while( i < 5 ) {
     sprintf(ausgabe, "Gewicht%d", i);
@@ -561,7 +581,7 @@ void setPreferences(void) {
     Serial.print("glastoleranz = ");    Serial.println(glastoleranz);
     Serial.print("show_current = ");    Serial.println(show_current);
     Serial.print("color_scheme = ");    Serial.println(color_scheme);
-    Serial.print("color_marker = ");    Serial.println(color_marker);
+    Serial.print("color_marker_idx = ");    Serial.println(color_marker_idx);
     i = 0;
     while( i < 5 ) {
       sprintf(ausgabe, "Gewicht%d = ", i);
@@ -581,13 +601,13 @@ void setupTripCounter(void) {
   float TripAbfuellgewicht = 0;
   int y_offset_tft = 28;
   const char title[] = "Zählwerk Trip";
-  gfx->fillScreen(BACKGROUND);
-  gfx->setTextColor(TEXT);
+  gfx->fillScreen(COLOR_BACKGROUND);
+  gfx->setTextColor(COLOR_TEXT);
   gfx->setFont(Punk_Mono_Bold_240_150);
   int x_pos = CenterPosX(title, 14, 320);
   gfx->setCursor(x_pos, 25);
   gfx->println(title);
-  gfx->drawLine(0, 30, 320, 30, TEXT);
+  gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   while (i > 0) { //Erster Screen: Anzahl pro Glasgröße
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
       while (digitalRead(button_stop_pin) == HIGH);
@@ -605,7 +625,7 @@ void setupTripCounter(void) {
     if (EncoderButtonTapped()) {
       //verlasse Screen
       i = 0;
-      gfx->fillRect(0, 31, 320, 209, BACKGROUND);
+      gfx->fillRect(0, 31, 320, 209, COLOR_BACKGROUND);
     }
   }
   i = 1;
@@ -626,7 +646,7 @@ void setupTripCounter(void) {
     if (EncoderButtonTapped()) {
       //verlasse Screen
       i = 0;
-      gfx->fillRect(0, 31, 320, 209, BACKGROUND);
+      gfx->fillRect(0, 31, 320, 209, COLOR_BACKGROUND);
     }
   }
   i = 1;
@@ -654,7 +674,7 @@ void setupTripCounter(void) {
       //verlasse Screen
       while(digitalRead(EncoderButton) == LOW);
       i = 0;
-      gfx->fillRect(0, 31, 320, 209, BACKGROUND);
+      gfx->fillRect(0, 31, 320, 209, COLOR_BACKGROUND);
     }
   }
   i = 1;
@@ -670,15 +690,15 @@ void setupTripCounter(void) {
       }
       pos = getRotariesValue(SW_MENU);
       gfx->setCursor(5, 30+(1 * y_offset_tft));
-      if (pos == 0) {gfx->setTextColor(MARKER);}
-      else {gfx->setTextColor(TEXT);}
+      if (pos == 0) {gfx->setTextColor(COLOR_MARKER);}
+      else {gfx->setTextColor(COLOR_TEXT);}
       gfx->print("Reset");
       gfx->setCursor(5, 30+(2 * y_offset_tft));
-      if (pos == 1) {gfx->setTextColor(MARKER);}
-      else {gfx->setTextColor(TEXT);}
+      if (pos == 1) {gfx->setTextColor(COLOR_MARKER);}
+      else {gfx->setTextColor(COLOR_TEXT);}
       gfx->print("Abbrechen");
       if (digitalRead(EncoderButton) == LOW) {
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
         gfx->setCursor(283, 30+((pos+1) * y_offset_tft));
         gfx->print("OK");
         if ( pos == 0) {
@@ -699,13 +719,13 @@ void setupCounter(void) {
   float Abfuellgewicht = 0;
   int y_offset_tft = 28;
   const char title[] = "Zählwerk";
-  gfx->fillScreen(BACKGROUND);
-  gfx->setTextColor(TEXT);
+  gfx->fillScreen(COLOR_BACKGROUND);
+  gfx->setTextColor(COLOR_TEXT);
   gfx->setFont(Punk_Mono_Bold_240_150);
   int x_pos = CenterPosX(title, 14, 320);
   gfx->setCursor(x_pos, 25);
   gfx->println(title);
-  gfx->drawLine(0, 30, 320, 30, TEXT);
+  gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   while (i > 0) { //Erster Screen: Anzahl pro Glasgröße
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
       while (digitalRead(button_stop_pin) == HIGH);
@@ -723,7 +743,7 @@ void setupCounter(void) {
     if (EncoderButtonTapped()) {
       //verlasse Screen
       i = 0;
-      gfx->fillRect(0, 31, 320, 209, BACKGROUND);
+      gfx->fillRect(0, 31, 320, 209, COLOR_BACKGROUND);
     }
   }
   i = 1;
@@ -744,7 +764,7 @@ void setupCounter(void) {
     if (EncoderButtonTapped()) {
       //verlasse Screen
       i = 0;
-      gfx->fillRect(0, 31, 320, 209, BACKGROUND);
+      gfx->fillRect(0, 31, 320, 209, COLOR_BACKGROUND);
     }
   }
   i = 1;
@@ -769,7 +789,7 @@ void setupCounter(void) {
     if (EncoderButtonTapped()) {
       //verlasse Screen
       i = 0;
-      gfx->fillRect(0, 31, 320, 209, BACKGROUND);
+      gfx->fillRect(0, 31, 320, 209, COLOR_BACKGROUND);
     }
   }
   i = 1;
@@ -785,15 +805,15 @@ void setupCounter(void) {
       }
       pos = getRotariesValue(SW_MENU);
       gfx->setCursor(5, 30+(1 * y_offset_tft));
-      if (pos == 0) {gfx->setTextColor(MARKER);}
-      else {gfx->setTextColor(TEXT);}
+      if (pos == 0) {gfx->setTextColor(COLOR_MARKER);}
+      else {gfx->setTextColor(COLOR_TEXT);}
       gfx->print("Reset");
       gfx->setCursor(5, 30+(2 * y_offset_tft));
-      if (pos == 1) {gfx->setTextColor(MARKER);}
-      else {gfx->setTextColor(TEXT);}
+      if (pos == 1) {gfx->setTextColor(COLOR_MARKER);}
+      else {gfx->setTextColor(COLOR_TEXT);}
       gfx->print("Abbrechen");
       if (EncoderButtonPressed()) {
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
         gfx->setCursor(283, 30+((pos+1) * y_offset_tft));
         gfx->print("OK");
         if ( pos == 0) {
@@ -817,7 +837,7 @@ void setupTara(void) {
   tara = 0;
   initRotaries(SW_MENU, 0, 0, 4, -1);   // Set Encoder to Menu Mode, four Selections, inverted count
   i = 0;
-  gfx->fillScreen(BACKGROUND);
+  gfx->fillScreen(COLOR_BACKGROUND);
   bool change = false;
   const char menu[] = "Tarawerte Gläser";
   while (i == 0)  {
@@ -835,20 +855,20 @@ void setupTara(void) {
       i++;
     }
     if (change) {
-      gfx->fillScreen(BACKGROUND);
+      gfx->fillScreen(COLOR_BACKGROUND);
     }
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Bold_240_150);
     x_pos = CenterPosX(menu, 14, 320);
     gfx->setCursor(x_pos, 25);
     gfx->println(menu);
-    gfx->drawLine(0, 30, 320, 30, TEXT);
+    gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
     for(int j=0;j<5;j++) {
       if (j == getRotariesValue(SW_MENU)) {
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
       }
       else {
-        gfx->setTextColor(TEXT);
+        gfx->setTextColor(COLOR_TEXT);
       }
       gfx->setCursor(5, 60+(j*30));
       if (glaeser[j].Gewicht < 1000) {
@@ -874,15 +894,15 @@ void setupTara(void) {
 
 void setupCalibration(void) {
   float gewicht_raw;
-  gfx->fillScreen(BACKGROUND);
+  gfx->fillScreen(COLOR_BACKGROUND);
   int kali_gewicht_old = -1;
   const char menu[] = "Kalibrieren";
-  gfx->setTextColor(TEXT);
+  gfx->setTextColor(COLOR_TEXT);
   gfx->setFont(Punk_Mono_Bold_240_150);
   int x_pos = CenterPosX(menu, 14, 320);
   gfx->setCursor(x_pos, 25);
   gfx->println(menu);
-  gfx->drawLine(0, 30, 320, 30, TEXT);
+  gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   sprintf(ausgabe, "Bitte Waage leeren");
   x_pos = CenterPosX(ausgabe, 14, 320);
   gfx->setCursor(x_pos, 100); gfx->print(ausgabe);
@@ -906,13 +926,13 @@ void setupCalibration(void) {
       i = 0;
     }
   }
-  gfx->fillScreen(BACKGROUND);
-  gfx->setTextColor(TEXT);
+  gfx->fillScreen(COLOR_BACKGROUND);
+  gfx->setTextColor(COLOR_TEXT);
   gfx->setFont(Punk_Mono_Bold_240_150);
   x_pos = CenterPosX(menu, 14, 320);
   gfx->setCursor(x_pos, 25);
   gfx->println(menu);
-  gfx->drawLine(0, 30, 320, 30, TEXT);
+  gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   initRotaries(SW_MENU, kali_gewicht, 100, 9999, 1); 
   i = 1;
   while (i > 0) {
@@ -923,7 +943,7 @@ void setupCalibration(void) {
     }
     kali_gewicht = getRotariesValue(SW_MENU);
     if (kali_gewicht != kali_gewicht_old) {
-      gfx->setTextColor(BACKGROUND);
+      gfx->setTextColor(COLOR_BACKGROUND);
       if ((kali_gewicht >= 1000 and kali_gewicht_old <= 999) or (kali_gewicht_old >= 1000 and kali_gewicht <= 999)) {
         sprintf(ausgabe, "Bitte %dg", kali_gewicht_old);
       }
@@ -932,13 +952,13 @@ void setupCalibration(void) {
       }
       x_pos = CenterPosX(ausgabe, 14, 320);
       gfx->setCursor(x_pos, 100); gfx->print(ausgabe);
-      gfx->setTextColor(TEXT);
+      gfx->setTextColor(COLOR_TEXT);
       sprintf(ausgabe, "      %dg", kali_gewicht);
       x_pos = CenterPosX(ausgabe, 14, 320);
       gfx->setCursor(x_pos, 100); gfx->print("Bitte ");
-      gfx->setTextColor(MARKER);
+      gfx->setTextColor(COLOR_MARKER);
       gfx->setCursor(x_pos, 100); gfx->print(ausgabe);
-      gfx->setTextColor(TEXT);
+      gfx->setTextColor(COLOR_TEXT);
       sprintf(ausgabe, "aufstellen");
       x_pos = CenterPosX(ausgabe, 14, 320);
       gfx->setCursor(x_pos, 128); gfx->print(ausgabe);
@@ -989,13 +1009,13 @@ void setupServoWinkel(void) {
   const char title[] = "Servoeinstellungen";
   int MenuepunkteAnzahl = 5;
   const char *menuepunkte[MenuepunkteAnzahl] = {"Livesetup", "Minimum", "Feindos.", "Maximum", "Speichern"};
-  gfx->fillScreen(BACKGROUND);
-  gfx->setTextColor(TEXT);
+  gfx->fillScreen(COLOR_BACKGROUND);
+  gfx->setTextColor(COLOR_TEXT);
   gfx->setFont(Punk_Mono_Bold_240_150);
   int x_pos = CenterPosX(title, 14, 320);
   gfx->setCursor(x_pos, 25);
   gfx->println(title);
-  gfx->drawLine(0, 30, 320, 30, TEXT);
+  gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   i = 1;
   while (i > 0) {
     if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
@@ -1032,9 +1052,9 @@ void setupServoWinkel(void) {
       }
     }
     for(int j=0; j < MenuepunkteAnzahl; j++) {
-      gfx->setTextColor(TEXT);
+      gfx->setTextColor(COLOR_TEXT);
       if (j == pos and wert_aendern == false) {
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
       }
       if (j < MenuepunkteAnzahl - 1) {
         gfx->setCursor(5, 30+((j+1) * y_offset_tft));
@@ -1045,7 +1065,7 @@ void setupServoWinkel(void) {
             gfx->setCursor(170, 30+((j+1) * y_offset_tft));
             gfx->print(ausgabe);
           }
-          gfx->setTextColor(MARKER);
+          gfx->setTextColor(COLOR_MARKER);
         }
         switch (j) {
           case 0: sprintf(ausgabe,"%s", servo_live==false?"aus":"ein");
@@ -1074,7 +1094,7 @@ void setupServoWinkel(void) {
                   break;
           }
           if (change) {
-            gfx->fillRect(251, 27+((j+1) * y_offset_tft)-19, 64, 25, BACKGROUND);
+            gfx->fillRect(251, 27+((j+1) * y_offset_tft)-19, 64, 25, COLOR_BACKGROUND);
             change = false;
           }
           int y = get_length(ausgabe);
@@ -1112,7 +1132,7 @@ void setupServoWinkel(void) {
       }
       initRotaries(SW_MENU, menuitem, 0, menuitem_used, -1);
       wert_aendern = false;
-      gfx->fillRect(170, 30+y_offset_tft+3, 96, 3*y_offset_tft + 2, BACKGROUND);
+      gfx->fillRect(170, 30+y_offset_tft+3, 96, 3*y_offset_tft + 2, COLOR_BACKGROUND);
     }
     if (EncoderButtonPressed() && menuitem == 6) {
       while(EncoderButtonPressed());
@@ -1140,13 +1160,13 @@ void setupAutomatik(void) {
   const char title[] = "Automatik";
   int MenuepunkteAnzahl = 6;
   const char *menuepunkte[MenuepunkteAnzahl] = {"Autostart", "Glastoleranz", "Korrektur", "Autokorrektur", "-> Kulanz", "Speichern"};
-  gfx->fillScreen(BACKGROUND);
-  gfx->setTextColor(TEXT);
+  gfx->fillScreen(COLOR_BACKGROUND);
+  gfx->setTextColor(COLOR_TEXT);
   gfx->setFont(Punk_Mono_Bold_240_150);
   int x_pos = CenterPosX(title, 14, 320);
   gfx->setCursor(x_pos, 25);
   gfx->println(title);
-  gfx->drawLine(0, 30, 320, 30, TEXT);
+  gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
   i = 1;
   while (i > 0) {
@@ -1185,15 +1205,15 @@ void setupAutomatik(void) {
     }
     // Menu
     for(int j=0; j < MenuepunkteAnzahl; j++) {
-      gfx->setTextColor(TEXT);
+      gfx->setTextColor(COLOR_TEXT);
       if (j == pos and wert_aendern == false) {
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
       }
       if (j < MenuepunkteAnzahl - 1) {
         gfx->setCursor(5, 30+((j+1) * y_offset_tft));
         gfx->print(menuepunkte[j]);
         if (j == pos and wert_aendern == true) {
-          gfx->setTextColor(MARKER);
+          gfx->setTextColor(COLOR_MARKER);
         }
         switch (j) {
           case 0: sprintf(ausgabe,"%s", autostart==false?"aus":"ein");
@@ -1233,7 +1253,7 @@ void setupAutomatik(void) {
                   break;
         }
         if (change) {
-          gfx->fillRect(251, 27+((j+1) * y_offset_tft)-19, 64, 25, BACKGROUND);
+          gfx->fillRect(251, 27+((j+1) * y_offset_tft)-19, 64, 25, COLOR_BACKGROUND);
           change = false;
         }
         int y = get_length(ausgabe);
@@ -1293,13 +1313,13 @@ void setupFuellmenge(void) {
   const char title[] = "Füllmenge Gläser";
   //int MenuepunkteAnzahl = 5;
   //const char *menuepunkte[MenuepunkteAnzahl] = {"Livesetup", "Minimum", "Feindos.", "Maximum", "Speichern"};
-  gfx->fillScreen(BACKGROUND);
-  gfx->setTextColor(TEXT);
+  gfx->fillScreen(COLOR_BACKGROUND);
+  gfx->setTextColor(COLOR_TEXT);
   gfx->setFont(Punk_Mono_Bold_240_150);
   int x_pos = CenterPosX(title, 14, 320);
   gfx->setCursor(x_pos, 25);
   gfx->println(title);
-  gfx->drawLine(0, 30, 320, 30, TEXT);
+  gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   int j;
   initRotaries(SW_MENU, fmenge_index, 0, 4, -1);
   i = 1;
@@ -1312,10 +1332,10 @@ void setupFuellmenge(void) {
     pos = getRotariesValue(SW_MENU);
     for(int j=0; j < 5; j++) {
     if (j == pos) {
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
       }
       else {
-        gfx->setTextColor(TEXT);
+        gfx->setTextColor(COLOR_TEXT);
       }
       gfx->setCursor(10, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%4dg", glaeser[j].Gewicht);
@@ -1350,14 +1370,14 @@ void setupFuellmenge(void) {
       gfx->setCursor(10, 30+((j+1) * y_offset_tft));
       if (j == pos) {
         if (wert_old != String(glaeser[j].Gewicht)) {
-          gfx->fillRect(0, 27+((j+1) * y_offset_tft)-19, 100, 27, BACKGROUND);
+          gfx->fillRect(0, 27+((j+1) * y_offset_tft)-19, 100, 27, COLOR_BACKGROUND);
           wert_old = String(glaeser[j].Gewicht);
         }
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
       }
       sprintf(ausgabe, "%4dg", glaeser[j].Gewicht);
       gfx->print(ausgabe);
-      gfx->setTextColor(TEXT);
+      gfx->setTextColor(COLOR_TEXT);
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
       if (GlasTypArray[glaeser[j].GlasTyp] == "DIB") {
         gfx->print("DE Imker Bund");
@@ -1391,10 +1411,10 @@ void setupFuellmenge(void) {
       gfx->print(ausgabe);
       if (j == pos) {
         if (wert_old != String(GlasTypArray[glaeser[j].GlasTyp])) {
-          gfx->fillRect(100, 27+((j+1) * y_offset_tft)-19, 220, 27, BACKGROUND);
+          gfx->fillRect(100, 27+((j+1) * y_offset_tft)-19, 220, 27, COLOR_BACKGROUND);
           wert_old = String(GlasTypArray[glaeser[j].GlasTyp]);
         }
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
       }
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
       if (GlasTypArray[glaeser[j].GlasTyp] == "DIB") {
@@ -1409,7 +1429,7 @@ void setupFuellmenge(void) {
       else if (GlasTypArray[glaeser[j].GlasTyp] == "SPZ") {
         gfx->print("Spezial");
       }
-      gfx->setTextColor(TEXT);
+      gfx->setTextColor(COLOR_TEXT);
     }
     if (EncoderButtonTapped()) { //GlasTyp bestätigt
       while(EncoderButtonTapped());
@@ -1431,7 +1451,7 @@ void setupParameter(void) {
   int lastlogo      = showlogo;
   int lastcredits   = showcredits;
   int lastcolor_scheme = color_scheme;
-  int lastcolor_marker = color_marker;
+  int lastcolor_marker_idx = color_marker_idx;
   bool wert_aendern = false;
   int y_offset_tft = 28;
   int wert_old = -1;
@@ -1452,7 +1472,7 @@ void setupParameter(void) {
       showlogo = lastlogo;
       showcredits = lastcredits;
       color_scheme = lastcolor_scheme;
-      color_marker = lastcolor_marker;
+      color_marker_idx = lastcolor_marker_idx;
       modus = -1;
       return;
     }
@@ -1475,32 +1495,32 @@ void setupParameter(void) {
                 break;
         case 4: color_scheme  = getRotariesValue(SW_MENU);
                 break;
-        case 5: color_marker  = getRotariesValue(SW_MENU);
+        case 5: color_marker_idx  = getRotariesValue(SW_MENU);
                 break;
       }
     }
     // Menu
     if(change_scheme) {
-      gfx->fillScreen(BACKGROUND);
-      gfx->setTextColor(TEXT);
+      gfx->fillScreen(COLOR_BACKGROUND);
+      gfx->setTextColor(COLOR_TEXT);
       gfx->setFont(Punk_Mono_Bold_240_150);
       int x_pos = CenterPosX(title, 14, 320);
       gfx->setCursor(x_pos, 25);
       gfx->println(title);
-      gfx->drawLine(0, 30, 320, 30, TEXT);
+      gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
       change_scheme = false;
       change_marker = true;
     }
     for(int j=0;j < MenuepunkteAnzahl;j++) {
-      gfx->setTextColor(TEXT);
+      gfx->setTextColor(COLOR_TEXT);
       if (j == pos and wert_aendern == false) {
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
       }
       if (j < MenuepunkteAnzahl - 1) {
         gfx->setCursor(5, 30+((j+1) * y_offset_tft));
         gfx->print(menuepunkte[j]);
         if (j == pos and wert_aendern == true) {
-          gfx->setTextColor(MARKER);
+          gfx->setTextColor(COLOR_MARKER);
         }
         switch (j) {
           case 0: sprintf(ausgabe,"%s", buzzermode==false?"aus":"ein");
@@ -1536,20 +1556,20 @@ void setupParameter(void) {
                   }
                   break;
           case 5: sprintf(ausgabe,"");
-                  if (wert_old != color_marker and wert_aendern == true and j == pos) {
+                  if (wert_old != color_marker_idx and wert_aendern == true and j == pos) {
                     change = true;
                     change_marker = true;
-                    wert_old = color_marker;
+                    wert_old = color_marker_idx;
                     tft_marker();
                   }
                   break;
         }
         if (change) {
-          gfx->fillRect(211, 27+((j+1) * y_offset_tft)-19, 104, 25, BACKGROUND);
+          gfx->fillRect(211, 27+((j+1) * y_offset_tft)-19, 104, 25, COLOR_BACKGROUND);
           change = false;
         }
         if (change_marker) {
-          gfx->fillRect(265, 27+(6 * y_offset_tft)-17, 45, 21, MARKER);
+          gfx->fillRect(265, 27+(6 * y_offset_tft)-17, 45, 21, COLOR_MARKER);
           change_marker = false;
         }
         int y = get_length(ausgabe);
@@ -1575,7 +1595,7 @@ void setupParameter(void) {
                 break;
         case 4: initRotaries(SW_MENU, color_scheme, 0, 1, 1);
                 break;
-        case 5: initRotaries(SW_MENU, color_marker, 0, 11, 1);
+        case 5: initRotaries(SW_MENU, color_marker_idx, 0, 11, 1);
                 break;
       }
       wert_old = -1;
@@ -1603,16 +1623,16 @@ void setupClearPrefs(void) {
   initRotaries(SW_MENU, 2, 0, 2, -1);
   int x_pos;
   int y_offset_tft = 28;
-  gfx->fillScreen(BACKGROUND);
+  gfx->fillScreen(COLOR_BACKGROUND);
   const char title[] = "Clear Preferences";
   int MenuepunkteAnzahl = 3;
   const char *menuepunkte[MenuepunkteAnzahl - 1] = {"Lösche Preferences", "Lösche NVS memory", "Zurück"};
-  gfx->setTextColor(TEXT);
+  gfx->setTextColor(COLOR_TEXT);
   gfx->setFont(Punk_Mono_Bold_240_150);
   x_pos = CenterPosX(title, 14, 320);
   gfx->setCursor(x_pos, 25);
   gfx->println(title);
-  gfx->drawLine(0, 30, 320, 30, TEXT);
+  gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   i = 1;
   while (i > 0) {
     if (digitalRead(button_stop_pin) == HIGH  or digitalRead(switch_setup_pin) == LOW) {
@@ -1623,10 +1643,10 @@ void setupClearPrefs(void) {
     pos = getRotariesValue(SW_MENU);
     for(int j=0;j<MenuepunkteAnzahl;j++) {
       if (j == pos) {
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
       }
       else {
-        gfx->setTextColor(TEXT);
+        gfx->setTextColor(COLOR_TEXT);
       }
       if (j < MenuepunkteAnzahl - 1) {
         gfx->setCursor(10, 30+((j+1) * y_offset_tft));
@@ -1680,13 +1700,13 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
   int MenuepunkteAnzahl = 3;
   const char *menuepunkte_1[MenuepunkteAnzahl] = {"Servo Strom", "Cal. Quetschhan", "Speichern"};
   const char *menuepunkte_2[MenuepunkteAnzahl] = {"Servo Strom", "Zeige Strom an", "Speichern"};
-  gfx->fillScreen(BACKGROUND);
-  gfx->setTextColor(TEXT);
+  gfx->fillScreen(COLOR_BACKGROUND);
+  gfx->setTextColor(COLOR_TEXT);
   gfx->setFont(Punk_Mono_Bold_240_150);
   int x_pos = CenterPosX(title, 14, 320);
   gfx->setCursor(x_pos, 25);
   gfx->println(title);
-  gfx->drawLine(0, 30, 320, 30, TEXT);
+  gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
   i = 1;
   while (i > 0) {
@@ -1726,9 +1746,9 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
     // Menu
     int a = 0;
     while(a < MenuepunkteAnzahl) {
-      gfx->setTextColor(TEXT);
+      gfx->setTextColor(COLOR_TEXT);
       if (a == pos and wert_aendern == false) {
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
       }
       if (a < MenuepunkteAnzahl - 1) {
         if (current_servo == 0) {
@@ -1740,7 +1760,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
           gfx->print(menuepunkte_1[a]);
         }
         if (a == pos and wert_aendern == true) {
-          gfx->setTextColor(MARKER);
+          gfx->setTextColor(COLOR_MARKER);
         }
         switch (a) {
           case 0: sprintf(ausgabe,"%dmA", current_servo);
@@ -1767,13 +1787,13 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
         }
         if (change) {
           if (a == 0) {
-            gfx->fillRect(215, 27+((a+1) * y_offset_tft)-19, 100, 25, BACKGROUND);
+            gfx->fillRect(215, 27+((a+1) * y_offset_tft)-19, 100, 25, COLOR_BACKGROUND);
             if (wert_old == 0 or wert_old == 50) {                                                //nicht ganz sauber bei den Schwellwerten. 
-              gfx->fillRect(0, 27+((a+2) * y_offset_tft)-19, 320, 27, BACKGROUND);
+              gfx->fillRect(0, 27+((a+2) * y_offset_tft)-19, 320, 27, COLOR_BACKGROUND);
             }
           }
           else {
-            gfx->fillRect(251, 27+((a+1) * y_offset_tft)-19, 64, 25, BACKGROUND);
+            gfx->fillRect(251, 27+((a+1) * y_offset_tft)-19, 64, 25, COLOR_BACKGROUND);
           }
           change = false;
         }
@@ -1827,13 +1847,13 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
       }
       menuitem_used = 1;
       if (j == 1) {
-        gfx->fillScreen(BACKGROUND);
-        gfx->setTextColor(TEXT);
+        gfx->fillScreen(COLOR_BACKGROUND);
+        gfx->setTextColor(COLOR_TEXT);
         gfx->setFont(Punk_Mono_Bold_240_150);
         x_pos = CenterPosX(title, 14, 320);
         gfx->setCursor(x_pos, 25);
         gfx->println(title);
-        gfx->drawLine(0, 30, 320, 30, TEXT);
+        gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
         gfx->setCursor(5, 30+(3 * y_offset_tft));
         sprintf(ausgabe,"max. Strom:     %4imA", current_servo - 30);
         gfx->print(ausgabe);
@@ -1843,18 +1863,18 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
         j++;
       }
       if (wert_aendern == false && menuitem < menuitem_used && kalibration_status == "Start") {
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
         gfx->setCursor(5, 30+(1 * y_offset_tft));
         gfx->print(kalibration_status);
-        gfx->setTextColor(TEXT);
+        gfx->setTextColor(COLOR_TEXT);
         gfx->setCursor(5, 30+(7 * y_offset_tft));
         gfx->print("Zurück");
       }
       else {
-        gfx->setTextColor(TEXT);
+        gfx->setTextColor(COLOR_TEXT);
         gfx->setCursor(5, 30+(1 * y_offset_tft));
         gfx->print(kalibration_status);
-        gfx->setTextColor(MARKER);
+        gfx->setTextColor(COLOR_MARKER);
         gfx->setCursor(5, 30+(7 * y_offset_tft));
         gfx->print("Zurück");
       }
@@ -1879,11 +1899,11 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
       //verlassen
       if ((EncoderButtonPressed() && menuitem == 6) or digitalRead(button_stop_pin) == HIGH) {
         while(EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH);
-        gfx->fillScreen(BACKGROUND);
+        gfx->fillScreen(COLOR_BACKGROUND);
         x_pos = CenterPosX(title, 14, 320);
         gfx->setCursor(x_pos, 25);
         gfx->println(title);
-        gfx->drawLine(0, 30, 320, 30, TEXT);
+        gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
         wert_aendern = false;
         menuitem_used = 2;
         initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
@@ -1895,22 +1915,22 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
         bool measurement_run = false;
         while (!cal_done) {
           if (k == 1) {
-            gfx->fillScreen(BACKGROUND);
-            gfx->setTextColor(TEXT);
+            gfx->fillScreen(COLOR_BACKGROUND);
+            gfx->setTextColor(COLOR_TEXT);
             gfx->setFont(Punk_Mono_Bold_240_150);
             x_pos = CenterPosX(title, 14, 320);
             gfx->setCursor(x_pos, 25);
             gfx->println(title);
-            gfx->drawLine(0, 30, 320, 30, TEXT);
+            gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
             gfx->setCursor(5, 30+(3 * y_offset_tft));
             change = true;
             k++;
           }
           if (change) {
-            gfx->setTextColor(TEXT);
+            gfx->setTextColor(COLOR_TEXT);
             gfx->setCursor(5, 30+(1 * y_offset_tft));
             gfx->print(kalibration_status);
-            gfx->fillRect(205, 27+(3 * y_offset_tft)-19, 110, 3 * y_offset_tft, BACKGROUND);
+            gfx->fillRect(205, 27+(3 * y_offset_tft)-19, 110, 3 * y_offset_tft, COLOR_BACKGROUND);
             gfx->setCursor(5, 30+(3 * y_offset_tft));
             sprintf(ausgabe,"Strom:          %4imA", current_mA);
             gfx->print(ausgabe);
@@ -1920,7 +1940,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
             gfx->setCursor(5, 30+(5 * y_offset_tft));
             sprintf(ausgabe,"Quetschhan:      %5s", quetschhan);
             gfx->print(ausgabe);
-            gfx->setTextColor(MARKER);
+            gfx->setTextColor(COLOR_MARKER);
             gfx->setCursor(5, 30+(7 * y_offset_tft));
             gfx->print("Abbrechen");
             change = false;
@@ -1952,12 +1972,12 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
           //verlassen
           if (EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH) {
             while(EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH);
-            gfx->fillScreen(BACKGROUND);
-            gfx->setTextColor(TEXT);
+            gfx->fillScreen(COLOR_BACKGROUND);
+            gfx->setTextColor(COLOR_TEXT);
             x_pos = CenterPosX(title, 14, 320);
             gfx->setCursor(x_pos, 25);
             gfx->println(title);
-            gfx->drawLine(0, 30, 320, 30, TEXT);
+            gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
             k = 0;
             winkel_min = lastwinkel_min;
             cal_done = true;
@@ -1973,20 +1993,20 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
             wert_old = current_mA;
           }
           if (k==2) {
-            gfx->setTextColor(TEXT);
-            gfx->fillRect(0, 27+(1 * y_offset_tft)-19, 320, 25, BACKGROUND);
-            gfx->fillRect(0, 27+(5 * y_offset_tft)-19, 320, 25, BACKGROUND);
-            gfx->fillRect(0, 27+(7 * y_offset_tft)-19, 320, 25, BACKGROUND);
+            gfx->setTextColor(COLOR_TEXT);
+            gfx->fillRect(0, 27+(1 * y_offset_tft)-19, 320, 25, COLOR_BACKGROUND);
+            gfx->fillRect(0, 27+(5 * y_offset_tft)-19, 320, 25, COLOR_BACKGROUND);
+            gfx->fillRect(0, 27+(7 * y_offset_tft)-19, 320, 25, COLOR_BACKGROUND);
             gfx->setCursor(5, 30+(1 * y_offset_tft));
             gfx->print(kalibration_status);
-            gfx->setTextColor(MARKER);
+            gfx->setTextColor(COLOR_MARKER);
             gfx->setCursor(5, 30+(7 * y_offset_tft));
             gfx->print("Speichern");
-            gfx->setTextColor(TEXT);
+            gfx->setTextColor(COLOR_TEXT);
             k++;
           }
           if (change) {
-            gfx->fillRect(200, 27+(3 * y_offset_tft)-19, 120, 25, BACKGROUND);
+            gfx->fillRect(200, 27+(3 * y_offset_tft)-19, 120, 25, COLOR_BACKGROUND);
             gfx->setCursor(5, 30+(3 * y_offset_tft));
             sprintf(ausgabe,"Strom:          %4imA", current_mA);
             gfx->print(ausgabe);
@@ -2000,11 +2020,11 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
             menuitem_used = 2;
             winkel_min = lastwinkel_min;
             initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
-            gfx->fillScreen(BACKGROUND);
+            gfx->fillScreen(COLOR_BACKGROUND);
             x_pos = CenterPosX(title, 14, 320);
             gfx->setCursor(x_pos, 25);
             gfx->println(title);
-            gfx->drawLine(0, 30, 320, 30, TEXT);
+            gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
           }
           if (EncoderButtonTapped()) {
             k = 0;
@@ -2051,15 +2071,15 @@ void processSetup(void) {
       posmenu[i] = (menuitem + i) % MenuepunkteAnzahl;
     }
     if (menuitem != menuitem_old) {
-      gfx->fillScreen(BACKGROUND);
-      gfx->drawLine(0, 100, 320, 100, TEXT);
-      gfx->drawLine(0, 139, 320, 139, TEXT);
-      gfx->setTextColor(TEXT);
+      gfx->fillScreen(COLOR_BACKGROUND);
+      gfx->drawLine(0, 100, 320, 100, COLOR_TEXT);
+      gfx->drawLine(0, 139, 320, 139, COLOR_TEXT);
+      gfx->setTextColor(COLOR_TEXT);
       gfx->setFont(Punk_Mono_Bold_320_200);
       x_pos = CenterPosX(menuepunkte[posmenu[0]], 18, 320);
       gfx->setCursor(x_pos, 130);
       gfx->println(menuepunkte[posmenu[0]]);
-      gfx->setTextColor(MENU_POS1);
+      gfx->setTextColor(COLOR_MENU_POS1);
       gfx->setFont(Punk_Mono_Bold_240_150);
       x_pos = CenterPosX(menuepunkte[posmenu[MenuepunkteAnzahl-1]], 14, 320);
       gfx->setCursor(x_pos, 86);
@@ -2067,7 +2087,7 @@ void processSetup(void) {
       x_pos = CenterPosX(menuepunkte[posmenu[1]], 14, 320);
       gfx->setCursor(x_pos, 169);
       gfx->println(menuepunkte[posmenu[1]]);
-      gfx->setTextColor(MENU_POS2);
+      gfx->setTextColor(COLOR_MENU_POS2);
       gfx->setFont(Punk_Mono_Bold_200_125);                   //9 x 11 Pixel
       x_pos = CenterPosX(menuepunkte[posmenu[MenuepunkteAnzahl-2]], 12, 320);
       gfx->setCursor(x_pos, 60);
@@ -2075,7 +2095,7 @@ void processSetup(void) {
       x_pos = CenterPosX(menuepunkte[posmenu[2]], 12, 320);
       gfx->setCursor(x_pos, 192);
       gfx->println(menuepunkte[posmenu[2]]);
-      gfx->setTextColor(MENU_POS3);
+      gfx->setTextColor(COLOR_MENU_POS3);
       gfx->setFont(Punk_Mono_Bold_160_100);                   //7 x 9 Pixel
       x_pos = CenterPosX(menuepunkte[posmenu[MenuepunkteAnzahl-3]], 9, 320);
       gfx->setCursor(x_pos, 37);
@@ -2083,7 +2103,7 @@ void processSetup(void) {
       x_pos = CenterPosX(menuepunkte[posmenu[3]], 9, 320);
       gfx->setCursor(x_pos, 213);
       gfx->println(menuepunkte[posmenu[3]]);
-      gfx->setTextColor(MENU_POS4);
+      gfx->setTextColor(COLOR_MENU_POS4);
       gfx->setFont(Punk_Mono_Bold_120_075);                   //6 x 7 Pixel
       x_pos = CenterPosX(menuepunkte[posmenu[MenuepunkteAnzahl-4]], 7, 320);
       gfx->setCursor(x_pos, 16);
@@ -2153,16 +2173,16 @@ void processAutomatik(void) {
     servo_aktiv_alt = -1;
     auto_aktiv_alt = -1;
     gewicht_alt = -9999999;
-    gfx->fillScreen(BACKGROUND);
-    gfx->setTextColor(TEXT);
+    gfx->fillScreen(COLOR_BACKGROUND);
+    gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Bold_320_200);
     sprintf(ausgabe,"Automatik");
     x_pos = CenterPosX(ausgabe, 18, 320);
     gfx->setCursor(x_pos, 27);
     gfx->print(ausgabe);
-    gfx->drawLine(0, 30, 320, 30, TEXT);
-    gfx->drawLine(0, 184, 320, 184, TEXT);
-    gfx->drawLine(160, 184, 160, 240, TEXT);
+    gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
+    gfx->drawLine(0, 184, 320, 184, COLOR_TEXT);
+    gfx->drawLine(160, 184, 160, 240, COLOR_TEXT);
     gfx->setCursor(2, 202);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->print("INA219");
@@ -2176,7 +2196,7 @@ void processAutomatik(void) {
       gfx->setTextColor(GREEN);
       gfx->print("A");
     }
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     gfx->setCursor(2, 219);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->print("Autostart");
@@ -2190,7 +2210,7 @@ void processAutomatik(void) {
       gfx->setTextColor(GREEN);
       gfx->print("A");
     }
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->setCursor(2, 236);
     gfx->print("Autokorrektur");
@@ -2204,7 +2224,7 @@ void processAutomatik(void) {
       gfx->setTextColor(GREEN);
       gfx->print("A");
     }
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->setCursor(170, 202);
     gfx->print("Strom:");
@@ -2216,7 +2236,7 @@ void processAutomatik(void) {
     //sprintf(ausgabe,"min:000°     max:000°      ist:000°", (winkel_min, winkel_max*pos/100));
     sprintf(ausgabe,"Min:         Max:         Ist:");
     gfx->print(ausgabe);
-    gfx->drawLine(0, 50, 320, 50, TEXT);
+    gfx->drawLine(0, 50, 320, 50, COLOR_TEXT);
   }
   pos = getRotariesValue(SW_WINKEL);
   // nur bis winkel_fein regeln, oder über initRotaries lösen?
@@ -2279,7 +2299,7 @@ void processAutomatik(void) {
     rotary_select = SW_WINKEL;     // falls während der Parameter-Änderung ein Glas aufgesetzt wird
     // START: nicht schön aber es funktioniert (vieleicht mit Subprogrammen arbeiten damit es besser wird)
     //PLAY ICON setzen
-    gfx->fillRect(12, 74, 38, 38, BACKGROUND);
+    gfx->fillRect(12, 74, 38, 38, COLOR_BACKGROUND);
     gfx->setFont(Icons_Start_Stop);
     gfx->setCursor(5, 118);
     gfx->print("M");
@@ -2287,15 +2307,15 @@ void processAutomatik(void) {
     gfx->setTextColor(GREEN);
     gfx->print("A");
     //Korrektur Wert auf Textfarbe setzen
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->setCursor(265, 219);
     sprintf(ausgabe, "%5ig", korrektur + autokorrektur_gr);
     gfx->print(ausgabe);
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     //Glasgewicht auf Textfarbe Setzen
     gfx->setCursor(2, 176);
-    gfx->fillRect(0, 156, 320, 27, BACKGROUND);
+    gfx->fillRect(0, 156, 320, 27, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Thin_240_150);
     sprintf(ausgabe, "%dg ", (glaeser[fmenge_index].Gewicht));
     gfx->print(ausgabe);
@@ -2304,7 +2324,7 @@ void processAutomatik(void) {
     sprintf(ausgabe, "+%dg ", (kulanz_gr));
     gfx->print(ausgabe);
     // END:   nicht schön aber es funktioniert
-    gfx->fillRect(80, 54, 240, 80, BACKGROUND);
+    gfx->fillRect(80, 54, 240, 80, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Bold_600_375);
     gfx->setCursor(100, 115);
     gfx->print("START");
@@ -2313,7 +2333,7 @@ void processAutomatik(void) {
     gewicht = int(SCALE_GETUNITS(SCALE_READS)) - tara;
     if (abs(gewicht) <= glastoleranz) {
       tara_glas   = gewicht;
-      gfx->fillRect(109, 156, 211, 27, BACKGROUND);
+      gfx->fillRect(109, 156, 211, 27, COLOR_BACKGROUND);
       gfx->setFont(Punk_Mono_Thin_240_150);
       sprintf(ausgabe, "Tara Glas: %dg ", (tara_glas));
       int sl = StringLenght(ausgabe);
@@ -2426,8 +2446,8 @@ void processAutomatik(void) {
     y_offset = 4;
   }
   if (ina219_installed == 1 and current_mA != current_mA_alt and (current_servo > 0 or show_current == 1)) {
-    gfx->fillRect(260, 187, 70, 18, BACKGROUND);
-    gfx->setTextColor(TEXT);
+    gfx->fillRect(260, 187, 70, 18, COLOR_BACKGROUND);
+    gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->setCursor(265, 202);
     if (current_mA > current_servo and current_servo > 0) {
@@ -2435,46 +2455,46 @@ void processAutomatik(void) {
     }
     sprintf(ausgabe, "%4imA", current_mA);
     gfx->print(ausgabe);
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     current_mA_alt = current_mA;
   }
   else if (ina219_installed == 1 and no_ina == 0 and show_current == 0) {
     no_ina = true;
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->setCursor(265, 202);
     gfx->print("   aus");
   }
   else if (ina219_installed == 0 and no_ina == 0) {
     no_ina = true;
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->setCursor(265, 202);
     gfx->print("    NA");
   }
   if (korr_alt != korrektur + autokorrektur_gr) {
     gfx->setFont(Punk_Mono_Thin_160_100);
-    gfx->setTextColor(BACKGROUND);
+    gfx->setTextColor(COLOR_BACKGROUND);
     gfx->setCursor(265, 219);
     sprintf(ausgabe, "%5ig", korr_alt);
     gfx->print(ausgabe);
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     if (rotary_select == SW_KORREKTUR and servo_aktiv == 0) {
-      gfx->setTextColor(MARKER);
+      gfx->setTextColor(COLOR_MARKER);
     }
     gfx->setCursor(265, 219);
     sprintf(ausgabe, "%5ig", korrektur + autokorrektur_gr);
     gfx->print(ausgabe);
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     korr_alt = korrektur + autokorrektur_gr;
   }
   if (autokorr_gr_alt != autokorrektur_gr) {
     gfx->setFont(Punk_Mono_Thin_160_100);
-    gfx->setTextColor(BACKGROUND);
+    gfx->setTextColor(COLOR_BACKGROUND);
     gfx->setCursor(265, 236);
     sprintf(ausgabe, "%5ig", autokorr_gr_alt);
     gfx->print(ausgabe);
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     gfx->setCursor(265, 236);
     sprintf(ausgabe, "%5ig", autokorrektur_gr);
     gfx->print(ausgabe);
@@ -2482,10 +2502,10 @@ void processAutomatik(void) {
   }
   if ((glas_alt != fmenge_index and servo_aktiv == 0 and gewicht <= glaeser[fmenge_index].Gewicht - tara) or (glas_alt != fmenge_index and rotary_select_alt == SW_KORREKTUR)) {
     if (rotary_select == SW_MENU and servo_aktiv == 0) {
-      gfx->setTextColor(MARKER);
+      gfx->setTextColor(COLOR_MARKER);
     }
     gfx->setCursor(2, 176);
-    gfx->fillRect(0, 156, 320, 27, BACKGROUND);
+    gfx->fillRect(0, 156, 320, 27, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Thin_240_150);
     sprintf(ausgabe, "%dg ", (glaeser[fmenge_index].Gewicht));
     gfx->print(ausgabe);
@@ -2507,12 +2527,12 @@ void processAutomatik(void) {
     else if (GlasTypArray[glaeser[fmenge_index].GlasTyp] == "SPZ") {
       gfx->print("Spezial");
     }
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     glas_alt = fmenge_index;
   }
   if (winkel_min  + offset_winkel != winkel_min_alt) {
-    gfx->setTextColor(TEXT);
-    gfx->fillRect(37, 33, 40, 16, BACKGROUND);
+    gfx->setTextColor(COLOR_TEXT);
+    gfx->fillRect(37, 33, 40, 16, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->setCursor(38, 47);
     sprintf(ausgabe, "%3i°", winkel_min + offset_winkel);
@@ -2520,7 +2540,7 @@ void processAutomatik(void) {
     winkel_min_alt = winkel_min + offset_winkel;
   }
   if (pos != pos_alt) {
-    gfx->fillRect(154, 33, 40, 16, BACKGROUND);
+    gfx->fillRect(154, 33, 40, 16, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->setCursor(155, 47);
     sprintf(ausgabe, "%3i°", winkel_max*pos/100);
@@ -2528,7 +2548,7 @@ void processAutomatik(void) {
     pos_alt = pos;
   }
   if (winkel != winkel_ist_alt) {
-    gfx->fillRect(271, 33, 40, 16, BACKGROUND);
+    gfx->fillRect(271, 33, 40, 16, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->setCursor(272, 47);
     sprintf(ausgabe, "%3i°", winkel);
@@ -2536,7 +2556,7 @@ void processAutomatik(void) {
     winkel_ist_alt = winkel;
   }
   if (auto_aktiv != auto_aktiv_alt) {
-    gfx->fillRect(12, 74, 38, 38, BACKGROUND);
+    gfx->fillRect(12, 74, 38, 38, COLOR_BACKGROUND);
     gfx->setFont(Icons_Start_Stop);
     gfx->setCursor(5, 118);
     gfx->print("M");
@@ -2552,11 +2572,11 @@ void processAutomatik(void) {
       gfx->print("B");
     }
     auto_aktiv_alt = auto_aktiv;
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
   }
   if (tara > 0) {
     if (gewicht < -20 and gewicht != gewicht_alt) {
-      gfx->fillRect(80, 54, 240, 80, BACKGROUND);
+      gfx->fillRect(80, 54, 240, 80, COLOR_BACKGROUND);
       gfx->setFont(Punk_Mono_Bold_320_200);
       gfx->setCursor(120, 88);
       gfx->print("Bitte Glas");
@@ -2565,7 +2585,7 @@ void processAutomatik(void) {
       glas_alt = -1;
     } 
     else if (gewicht != gewicht_alt) {
-      gfx->fillRect(80, 54, 240, 80, BACKGROUND);
+      gfx->fillRect(80, 54, 240, 80, COLOR_BACKGROUND);
       gfx->setFont(Punk_Mono_Bold_600_375);
       gfx->setCursor(100, 115);
       sprintf(ausgabe, "%5ig", gewicht - tara_glas);
@@ -2574,7 +2594,7 @@ void processAutomatik(void) {
     if (gewicht != gewicht_alt) {
       progressbar = 318.0*((float)gewicht/(float)(glaeser[fmenge_index].Gewicht));
       progressbar = constrain(progressbar,0,318);
-      gfx->drawRect(0, 137, 320, 15, TEXT);
+      gfx->drawRect(0, 137, 320, 15, COLOR_TEXT);
       if (glaeser[fmenge_index].Gewicht > gewicht) {
         gfx->fillRect  (1, 138, progressbar, 13, RED);
       }
@@ -2584,18 +2604,18 @@ void processAutomatik(void) {
       else {
         gfx->fillRect  (1, 138, progressbar, 13, ORANGE);
       }
-      gfx->fillRect  (1 + progressbar, 138, 318 - progressbar, 13, BACKGROUND);
+      gfx->fillRect  (1 + progressbar, 138, 318 - progressbar, 13, COLOR_BACKGROUND);
       gewicht_alt = gewicht;
     }
   }
   else if (gewicht != gewicht_alt) {
-    gfx->fillRect(80, 54, 240, 80, BACKGROUND);
-    gfx->fillRect(0, 137, 320, 15, BACKGROUND);
+    gfx->fillRect(80, 54, 240, 80, COLOR_BACKGROUND);
+    gfx->fillRect(0, 137, 320, 15, COLOR_BACKGROUND);
     gfx->setTextColor(RED);
     gfx->setFont(Punk_Mono_Bold_320_200);
     gfx->setCursor(120, 104);
     gfx->print("kein tara!");
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     gewicht_alt = gewicht;
   }
   if (alarm_overcurrent) {i = 1;}
@@ -2617,17 +2637,17 @@ void processAutomatik(void) {
   setPreferences();
 }
 
-void processHandbetrieb(void) {
-  i = 0;
+void processHandbetrieb(void) 
+{ i = 0;
   int y_offset = 0;
-  if (modus != MODE_HANDBETRIEB) {
-     modus = MODE_HANDBETRIEB;
-     winkel = winkel_min;          // Hahn schliessen
-     servo_aktiv = 0;              // Servo-Betrieb aus
-     SERVO_WRITE(winkel);
-     rotary_select = SW_WINKEL;
-     tara = 0;
-     offset_winkel = 0;            // Offset vom Winkel wird auf 0 gestellt
+  if (modus != MODE_HANDBETRIEB) // draw screen just once
+  { modus = MODE_HANDBETRIEB;
+    winkel = winkel_min;          // Hahn schliessen
+    servo_aktiv = 0;              // Servo-Betrieb aus
+    SERVO_WRITE(winkel);
+    rotary_select = SW_WINKEL;
+    tara = 0;
+    offset_winkel = 0;            // Offset vom Winkel wird auf 0 gestellt
     int x_pos;
     gewicht_alt = -9999999;
     pos_alt = -1;
@@ -2635,31 +2655,38 @@ void processHandbetrieb(void) {
     tara_alt = -1;
     current_mA_alt = -1;
     servo_aktiv_alt = -1;
-    gfx->fillScreen(BACKGROUND);
-    gfx->setTextColor(TEXT);
-    gfx->setFont(Punk_Mono_Bold_320_200);
-    sprintf(ausgabe,"Manuell");
-    x_pos = CenterPosX(ausgabe, 18, 320);
-    gfx->setCursor(x_pos, 27);
-    gfx->print(ausgabe);
-    gfx->drawLine(0, 30, 320, 30, TEXT);
+    delay(1000); // display omschakeling even de tijd geven
+    //gfx->fillScreen(COLOR_BACKGROUND);
+    gfx->setTextColor(COLOR_TEXT);
+    //gfx->setFont(Punk_Mono_Bold_320_200);
+    //sprintf(ausgabe,"Manuell");
+    //x_pos = CenterPosX(ausgabe, 18, 320);
+    //gfx->setCursor(x_pos, 27);
+    //gfx->print(ausgabe);
+    //gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
     gfx->setFont(Punk_Mono_Bold_200_125);
     gfx->setCursor(5, 192);
-    gfx->print("Servo:");
-    gfx->drawLine(0, 170, 320, 170, TEXT);
-    gfx->drawLine(160, 170, 160, 240, TEXT);
+    //gfx->print("Servo:");
+    //gfx->drawLine(0, 170, 320, 170, COLOR_TEXT);
+    //gfx->drawLine(160, 170, 160, 240, COLOR_TEXT);
     gfx->setCursor(170, 192);
-    gfx->print("Tara:");
-    if (ina219_installed == 1) {
-      gfx->setCursor(170, 215);
-      sprintf(ausgabe, "INA:     %3s", (current_servo==0?"aus":"ein"));
-      gfx->print(ausgabe);
-      if (ina219_installed == 1 and current_mA != current_mA_alt and (current_servo > 0 or show_current == 1)) {
-        gfx->setCursor(170, 238);
-        gfx->print("Strom:");
-      }
-    }
+    //    gfx->print("Tara:");
+    //  if (ina219_installed == 1) {
+    //    gfx->setCursor(170, 215);
+    //    sprintf(ausgabe, "INA:     %3s", (current_servo==0?"aus":"ein"));
+    //    gfx->print(ausgabe);
+   //    if (ina219_installed == 1 and current_mA != current_mA_alt and (current_servo > 0 or show_current == 1)) {
+    //      gfx->setCursor(170, 238);
+    //      gfx->print("Strom:");
+    //    }
+    //  }
+    
+    TFT_line_print(3, "gram");
+    TFT_line_color(3, TFT_YELLOW, TFT_BLACK);
+    TFT_line_color(2, TFT_YELLOW, TFT_BLACK); // Big Weight number
+  
   }
+
   pos = getRotariesValue(SW_WINKEL);
   gewicht = SCALE_GETUNITS(SCALE_READS) - tara;
   if ((digitalRead(button_start_pin)) == HIGH) {
@@ -2690,17 +2717,29 @@ void processHandbetrieb(void) {
       Serial.print(" servo_aktiv "); Serial.println(servo_aktiv);
     #endif
   #endif
-  gfx->setFont(Punk_Mono_Bold_600_375);
+//  gfx->setFont(Punk_Mono_Bold_600_375);
   if (gewicht != gewicht_alt) {
-    gfx->fillRect(80, 70, 200, 55, BACKGROUND);
-    gfx->setFont(Punk_Mono_Bold_600_375);
-    gfx->setCursor(100, 120);
-    sprintf(ausgabe, "%5ig", gewicht);
-    gfx->print(ausgabe);
+//    gfx->fillRect(80, 70, 200, 55, COLOR_BACKGROUND);
+//    gfx->setFont(Punk_Mono_Bold_600_375);
+//    gfx->setCursor(100, 120);
+//    sprintf(ausgabe, "%5ig", gewicht);
+//    gfx->print(ausgabe);
     gewicht_alt = gewicht;
+    NewWeight = gewicht; // NewWeight is used by new graphics handling
+    //NewWeight = 12345; // NewWeight is used by new graphics handling
   }
+
+  if(((winkel_min + offset_winkel) != winkel_min_alt) || (pos != pos_alt))
+  { sprintf(ausgabe, "Servo Min: %3d° Max: %3d°", (winkel_min + offset_winkel), (winkel_max*pos/100));
+    TFT_line_print(5, ausgabe);
+    winkel_min_alt = winkel_min + offset_winkel;
+    pos_alt = pos;
+
+  }
+
+/*
   if (winkel_min  + offset_winkel != winkel_min_alt) {
-    gfx->fillRect(97, 198, 50, 20, BACKGROUND);
+    gfx->fillRect(97, 198, 50, 20, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Bold_200_125);
     gfx->setCursor(5, 215);
     sprintf(ausgabe, "min:    %3i°", winkel_min + offset_winkel);
@@ -2708,15 +2747,27 @@ void processHandbetrieb(void) {
     winkel_min_alt = winkel_min + offset_winkel;
   }
   if (pos != pos_alt) {
-    gfx->fillRect(97, 221, 50, 20, BACKGROUND);
+    gfx->fillRect(97, 221, 50, 20, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Bold_200_125);
     gfx->setCursor(5, 238);
     sprintf(ausgabe, "max:    %3i°", winkel_max*pos/100);
     gfx->print(ausgabe);
     pos_alt = pos;
   }
+*/
+
+  // tarra value & current value for servo, printed on one line
+  if((tara != tara_alt) || ((ina219_installed == 1) && (current_mA != current_mA_alt) && (current_servo > 0 or show_current == 1)))
+  { sprintf(ausgabe, "Tarra: %3dg", tara);
+    if((ina219_installed == 1) && (current_mA != current_mA_alt) && (current_servo > 0 or show_current == 1))
+    { sprintf(&ausgabe[strlen(ausgabe)], " Servo: %dmA", current_mA);
+    }
+    TFT_line_print(4, ausgabe);
+  }
+
+/*
   if (tara != tara_alt) {
-    gfx->fillRect(230, 175, 90, 22, BACKGROUND);
+    gfx->fillRect(230, 175, 90, 22, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Bold_200_125);
     gfx->setCursor(240, 192);
     sprintf(ausgabe, "%5ig", tara);
@@ -2724,7 +2775,7 @@ void processHandbetrieb(void) {
     tara_alt = tara;
   }
   if (ina219_installed == 1 and current_mA != current_mA_alt and (current_servo > 0 or show_current == 1)) {
-    gfx->fillRect(240, 221, 80, 20, BACKGROUND);
+    gfx->fillRect(240, 221, 80, 20, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Bold_200_125);
     gfx->setCursor(170, 238);
     if (current_mA > current_servo and current_servo > 0) {
@@ -2732,26 +2783,37 @@ void processHandbetrieb(void) {
     }
     sprintf(ausgabe, "%10imA", current_mA);
     gfx->print(ausgabe);
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
     current_mA_alt = current_mA;
   }
+*/  
+
+if (servo_aktiv != servo_aktiv_alt) 
+{ servo_aktiv_alt = servo_aktiv;
+  if (servo_aktiv == 1)TFT_line_print(0, "MANUAL MODE DOSING");
+  else TFT_line_print(0, "MANUAL MODE PAUSED");
+}
+
+/*
   if (servo_aktiv != servo_aktiv_alt) {
-    gfx->fillRect(17, 79, 38, 38, BACKGROUND);
+    gfx->fillRect(17, 79, 38, 38, COLOR_BACKGROUND);
     gfx->setFont(Icons_Start_Stop);
     gfx->setCursor(10, 123);
-    gfx->print("M");
+    gfx->print("M"); // square
     gfx->setCursor(10, 123);
     if (servo_aktiv == 1) {
       gfx->setTextColor(GREEN);
-      gfx->print("A");
+      gfx->print("A"); // playing > symbol
     }
     else {
       gfx->setTextColor(RED);
-      gfx->print("B");
+      gfx->print("B"); // pauzed || symbol
     }
     servo_aktiv_alt = servo_aktiv;
-    gfx->setTextColor(TEXT);
+    gfx->setTextColor(COLOR_TEXT);
   }
+*/
+
   if (alarm_overcurrent) {i = 1;}
   while (i > 0) {
     inawatchdog = 0;                    //schalte die kontiunirliche INA Messung aus
@@ -2775,17 +2837,62 @@ void processHandbetrieb(void) {
   setPreferences();         //irgendwo anderst setzen. es muss nicht jede änderung geschrieben werden
 }
 
-void setup() {
+
+volatile int interruptCounter;
+hw_timer_t * timer = NULL;
+portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+
+void IRAM_ATTR onTimer() // is called every 10mS
+{ portENTER_CRITICAL_ISR(&timerMux);
+  interruptCounter++;
+
+  // timer example
+  // if(TimeOutMs)
+  // { digitalWrite(SOLENOID, HIGH);
+  //   TimeOutMs--;
+  // }
+  // else digitalWrite(SOLENOID, LOW);
+  
+  if((interruptCounter % 5)==0)bScrollNow = true; // 50ms ticker for the vertical scrolling of text
+
+  if((interruptCounter % 10)==0)
+  { bUpdateDisplay = true; // display refresh max 10 times a second
+  }
+
+  if((interruptCounter % 100)==0) // each second
+  { 
+  }
+
+ portEXIT_CRITICAL_ISR(&timerMux);
+}
+
+void setup() 
+{ // timer for all sorts of things including lcd display updates
+  timer = timerBegin(0, 80, true); // prescaler 1MHz
+  timerAttachInterrupt(timer, &onTimer, true);
+  timerAlarmWrite(timer, 10000, true); // elke 10mS
+  timerAlarmEnable(timer);
+  
+  Serial.begin(115200);
+  while (!Serial);
+  Serial.println("Hanimandl Start");
+  
+  tft_colors();
+  tft_marker();
+  gfx->begin();
+  gfx->fillScreen(COLOR_BACKGROUND);
+  gfx->setUTF8Print(true);
+    
+  SetupMyDisplay(); // in Z20jukeboxdisplay.cpp
+  delay(2000);
+
+  Serial.println("Pin Config");
   // enable internal pull downs for digital inputs 
   pinMode(button_start_pin, INPUT_PULLDOWN);
   pinMode(button_stop_pin, INPUT_PULLDOWN);
   pinMode(switch_betrieb_pin, INPUT_PULLDOWN);
   pinMode(switch_setup_pin, INPUT_PULLDOWN);
-  Serial.begin(115200);
-  while (!Serial) {}
-  #ifdef isDebug
-    Serial.println("Hanimandl Start");
-  #endif
+  
   // Try to initialize the INA219
   if (ina219.begin()) {
     ina219_installed = 1;
@@ -2831,35 +2938,14 @@ void setup() {
       #endif
     }
   }
-  // Boot Screen
-  tft_colors();
-  tft_marker();
-  gfx->begin();
-  gfx->fillScreen(BACKGROUND);
-  gfx->setUTF8Print(true);
-  if (showlogo) {
-    print_logo();
-    delay(3000);
-  }
-  if (showcredits) {
-    buzzer(BUZZER_SHORT);
-    print_credits();   
-    delay(2500);
-  }
+
+  buzzer(BUZZER_SHORT);
+
   // Setup der Waage, Skalierungsfaktor setzen
   if (waage_vorhanden ==1) {                         // Waage angeschlossen?
     if (faktor == 0) {                               // Vorhanden aber nicht kalibriert
-      gfx->fillScreen(BACKGROUND);
-      gfx->setTextColor(RED);
-      gfx->setFont(Punk_Mono_Bold_320_200);
-      sprintf(ausgabe,"Nicht");
-      int x_pos = CenterPosX(ausgabe, 18, 320);
-      gfx->setCursor(x_pos, 110);
-      gfx->print(ausgabe);
-      sprintf(ausgabe,"kalibriert");
-      x_pos = CenterPosX(ausgabe, 18, 320);
-      gfx->setCursor(x_pos, 154);
-      gfx->print(ausgabe);
+      TFT_line_print(1, "Scale Not Calibrated!");
+      TFT_line_color(1, TFT_RED, TFT_BLACK);
       buzzer(BUZZER_ERROR);
       #ifdef isDebug
         Serial.println("Waage nicht kalibriert!");
@@ -2875,28 +2961,24 @@ void setup() {
     }
   }
   else {                                            // Keine Waage angeschlossen
-    gfx->fillScreen(BACKGROUND);
-    gfx->setTextColor(RED);
-    gfx->setFont(Punk_Mono_Bold_320_200);
-    sprintf(ausgabe,"Keine");
-    int x_pos = CenterPosX(ausgabe, 18, 320);
-    gfx->setCursor(x_pos, 110);
-    gfx->print(ausgabe);
-    sprintf(ausgabe,"Waage!");
-    x_pos = CenterPosX(ausgabe, 18, 320);
-    gfx->setCursor(x_pos, 154);
-    gfx->print(ausgabe);
+    TFT_line_color(1, TFT_BLACK, TFT_RED);
+    TFT_line_print(1, "No Scale Connected!"); 
+    delay(500);
+    TFT_line_color(1, TFT_RED, TFT_BLACK);
+    delay(500);
+    TFT_line_color(1, TFT_BLACK, TFT_RED);
+
     buzzer(BUZZER_ERROR);
     #ifdef isDebug
       Serial.println("Keine Waage!");
     #endif
-    delay(2000);
   }
   // initiale Kalibrierung des Leergewichts wegen Temperaturschwankungen
   // Falls mehr als 20g Abweichung steht vermutlich etwas auf der Waage.
   if (waage_vorhanden == 1) {
     gewicht = SCALE_GETUNITS(SCALE_READS);
-    if ((gewicht > -20) && (gewicht < 20)) {
+    if ((gewicht > -20) && (gewicht < 20)) 
+    {
       scale.tare(10);
       buzzer(BUZZER_SUCCESS);
       #ifdef isDebug
@@ -2905,17 +2987,7 @@ void setup() {
       #endif
     }
     else if (faktor != 0) {
-      gfx->fillScreen(BACKGROUND);
-      gfx->setTextColor(RED);
-      gfx->setFont(Punk_Mono_Bold_320_200);
-      sprintf(ausgabe,"Waage");
-      int x_pos = CenterPosX(ausgabe, 18, 320);
-      gfx->setCursor(x_pos, 110);
-      gfx->print(ausgabe);
-      sprintf(ausgabe,"leeren!");
-      x_pos = CenterPosX(ausgabe, 18, 320);
-      gfx->setCursor(x_pos, 154);
-      gfx->print(ausgabe);
+      TFT_line_print(1, "Please Empty Scale"); 
       #ifdef isDebug
         Serial.print("Gewicht auf der Waage: ");
         Serial.println(gewicht);
@@ -2936,6 +3008,23 @@ void setup() {
       }
     }
   }
+ 
+  delay(2000);
+  TFT_line_print(4, ""); 
+  TFT_line_print(5, ""); // remove credits
+  delay(2000);
+  tft.fillScreen(TFT_BLACK);
+  delay(2000);
+  
+//  tft_colors();
+//  tft_marker();
+//  gfx->begin();
+//  gfx->fillScreen(COLOR_BACKGROUND);
+//  gfx->setUTF8Print(true);
+
+
+
+
   // die drei Datenstrukturen des Rotaries initialisieren
   initRotaries(SW_WINKEL,    0,   0, 100, 5);     // Winkel
   initRotaries(SW_KORREKTUR, 0, -90,  20, 1);     // Korrektur
@@ -2947,64 +3036,36 @@ void setup() {
 }
 
 void loop() 
-{ //INA219 Messung
+{ static int count;
+  Serial.println(count);
+  count++;
+  delay(100);
+  
+  //INA219 Messung
   if (ina219_installed and inawatchdog == 1 and (current_servo > 0 or show_current == 1) and (modus == MODE_HANDBETRIEB or modus == MODE_AUTOMATIK)) {
     ina219_measurement();
   }
   // Setup Menu 
   if ((digitalRead(switch_setup_pin)) == HIGH) {
+    NewHaniDisplayMode = HANI_SETUP;
     processSetup();
   }
   // Automatik-Betrieb 
   else if ((digitalRead(switch_betrieb_pin)) == HIGH) {
+    NewHaniDisplayMode = HANI_AUTO;
     processAutomatik();
+    delay(1000); // display even laten afwerken
   }
   // Handbetrieb 
   else if ((digitalRead(switch_betrieb_pin) == LOW) && (digitalRead(switch_setup_pin) == LOW)) {
+    if (modus != MODE_HANDBETRIEB)NewHaniDisplayMode = HANI_HAND; // only once
     processHandbetrieb();
+  }
+  else
+  { NewHaniDisplayMode = HANI_LOGO;
   }
 }
 
-void print_credits(void) {
-  int offset = 23;
-  gfx->fillScreen(BACKGROUND);
-  gfx->setTextColor(TEXT);
-  gfx->setFont(Punk_Mono_Bold_240_150);
-  gfx->setCursor(10, 1*offset);
-  gfx->print("Idee:");
-  gfx->setCursor(90, 1*offset);
-  gfx->print("M. Vasterling");
-  gfx->setCursor(10, 2*offset+10);
-  gfx->print("Code:");
-  gfx->setCursor(90, 2*offset+10);
-  gfx->print("M. Vasterling");
-  gfx->setCursor(90, 3*offset+10);
-  gfx->print("M. Wetzel");
-  gfx->setCursor(90, 4*offset+10);
-  gfx->print("C. Gruber");
-  gfx->setCursor(90, 5*offset+10);
-  gfx->print("A. Holzhammer");
-  gfx->setCursor(90, 6*offset+10);
-  gfx->print("M. Junker");
-  gfx->setCursor(90, 7*offset+10);
-  gfx->print("J. Kuder");
-  gfx->setCursor(90, 8*offset+10);
-  gfx->print("J. Bruker");
-}
-
-void print_logo(void) {
-  gfx->fillScreen(BACKGROUND);
-  gfx->drawXBitmap(60, 10, LogoBieneTFT, 200, 160, TEXT);
-  gfx->setTextColor(TEXT);
-  gfx->setFont(Punk_Mono_Bold_600_375);
-  gfx->setCursor(0, 180);
-  gfx->print("HANI");
-  gfx->setCursor(140, 235);
-  gfx->print("MANDL");
-  gfx->setFont(Punk_Mono_Bold_200_125);
-  gfx->setCursor(255, 180);
-  gfx->print(version);
-}
 
 // Wir nutzen einen aktiven Summer, damit entfällt die tone Library, die sich sowieso mit dem Servo beisst.
 void buzzer(byte type) {

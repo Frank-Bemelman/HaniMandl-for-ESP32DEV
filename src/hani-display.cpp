@@ -15,6 +15,8 @@ bool bScrollNow = false;
 bool bUpdateDisplay = false;
 bool bPrintWeight = false;
 int  NewWeight = 0;
+int  OldWeight = -1234;
+
 
 SemaphoreHandle_t  xDisplayMutex = NULL;
 
@@ -403,9 +405,7 @@ void UpdateLCD(void)
   int ycor;
   char text[32];
   int tw;
-  static bool logoprinted = false;
-  static int OldWeight = -1234;
-
+  
   static int scrollpos = 0;
   static bool refreshdisplay = false;
   int TextDatum;
@@ -417,9 +417,7 @@ void UpdateLCD(void)
   if (NewHaniDisplayMode != ActLcdMode)
   { ActLcdMode = NewHaniDisplayMode;
 Serial.println(NewHaniDisplayMode);
-    logoprinted = false;
     // good riddance
-    for (line = 0; line < TFTNUMOFLINES; line++)TFT_line_print(line, "");
     switch (ActLcdMode) // on this mode change, fill the text lines with appropriate data
     { case HANI_LOGO:
         for (line = 0; line < TFTNUMOFLINES; line++)
@@ -510,12 +508,6 @@ Serial.println(NewHaniDisplayMode);
     }
   }
 
- for (line = 2; line < 5; line++)
- { if(logoprinted)
-   { MyDisplay[line].refresh=false; // avoid printing over logo
-     MyDisplay[line].scroll=false; // avoid printing over logo
-   }
- }
  //Serial.println("Pak hem2"); 
  if(xSemaphoreTake(xDisplayMutex, (TickType_t)10)==pdTRUE)
  {  

@@ -25,8 +25,9 @@ extern void TFT_line_color(int line, int textcolor, int backgroundcolor);
 extern bool bScrollNow;
 extern bool bUpdateDisplay;
 extern int NewHaniDisplayMode;
+extern int ActLcdMode;
 extern int NewWeight;
-
+extern int OldWeight;
 //
 // Hier den Code auf die verwendete Hardware einstellen
 //
@@ -2650,38 +2651,13 @@ void processHandbetrieb(void)
     offset_winkel = 0;            // Offset vom Winkel wird auf 0 gestellt
     int x_pos;
     gewicht_alt = -9999999;
+    OldWeight = -1234;
     pos_alt = -1;
     winkel_min_alt = -1;
     tara_alt = -1;
     current_mA_alt = -1;
     servo_aktiv_alt = -1;
-    delay(1000); // display omschakeling even de tijd geven
-    //gfx->fillScreen(COLOR_BACKGROUND);
-//    gfx->setTextColor(COLOR_TEXT);
-    //gfx->setFont(Punk_Mono_Bold_320_200);
-    //sprintf(ausgabe,"Manuell");
-    //x_pos = CenterPosX(ausgabe, 18, 320);
-    //gfx->setCursor(x_pos, 27);
-    //gfx->print(ausgabe);
-    //gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
-//    gfx->setFont(Punk_Mono_Bold_200_125);
-//    gfx->setCursor(5, 192);
-    //gfx->print("Servo:");
-    //gfx->drawLine(0, 170, 320, 170, COLOR_TEXT);
-    //gfx->drawLine(160, 170, 160, 240, COLOR_TEXT);
-//    gfx->setCursor(170, 192);
-    //    gfx->print("Tara:");
-    //  if (ina219_installed == 1) {
-    //    gfx->setCursor(170, 215);
-    //    sprintf(ausgabe, "INA:     %3s", (current_servo==0?"aus":"ein"));
-    //    gfx->print(ausgabe);
-   //    if (ina219_installed == 1 and current_mA != current_mA_alt and (current_servo > 0 or show_current == 1)) {
-    //      gfx->setCursor(170, 238);
-    //      gfx->print("Strom:");
-    //    }
-    //  }
-    
-  
+    delay(500); // display omschakeling even de tijd geven
   }
 
   pos = getRotariesValue(SW_WINKEL);
@@ -2716,14 +2692,8 @@ void processHandbetrieb(void)
   #endif
 //  gfx->setFont(Punk_Mono_Bold_600_375);
   if (gewicht != gewicht_alt) {
-//    gfx->fillRect(80, 70, 200, 55, COLOR_BACKGROUND);
-//    gfx->setFont(Punk_Mono_Bold_600_375);
-//    gfx->setCursor(100, 120);
-//    sprintf(ausgabe, "%5ig", gewicht);
-//    gfx->print(ausgabe);
     gewicht_alt = gewicht;
     NewWeight = gewicht; // NewWeight is used by new graphics handling
-    //NewWeight = 12345; // NewWeight is used by new graphics handling
   }
 
   if(((winkel_min + offset_winkel) != winkel_min_alt) || (pos != pos_alt))
@@ -2731,27 +2701,8 @@ void processHandbetrieb(void)
     TFT_line_print(5, ausgabe);
     winkel_min_alt = winkel_min + offset_winkel;
     pos_alt = pos;
-
   }
 
-/*
-  if (winkel_min  + offset_winkel != winkel_min_alt) {
-    gfx->fillRect(97, 198, 50, 20, COLOR_BACKGROUND);
-    gfx->setFont(Punk_Mono_Bold_200_125);
-    gfx->setCursor(5, 215);
-    sprintf(ausgabe, "min:    %3i°", winkel_min + offset_winkel);
-    gfx->print(ausgabe);
-    winkel_min_alt = winkel_min + offset_winkel;
-  }
-  if (pos != pos_alt) {
-    gfx->fillRect(97, 221, 50, 20, COLOR_BACKGROUND);
-    gfx->setFont(Punk_Mono_Bold_200_125);
-    gfx->setCursor(5, 238);
-    sprintf(ausgabe, "max:    %3i°", winkel_max*pos/100);
-    gfx->print(ausgabe);
-    pos_alt = pos;
-  }
-*/
 
   // tarra value & current value for servo, printed on one line
   if((tara != tara_alt) || ((ina219_installed == 1) && (current_mA != current_mA_alt) && (current_servo > 0 or show_current == 1)))
@@ -2762,54 +2713,11 @@ void processHandbetrieb(void)
     TFT_line_print(4, ausgabe);
   }
 
-/*
-  if (tara != tara_alt) {
-    gfx->fillRect(230, 175, 90, 22, COLOR_BACKGROUND);
-    gfx->setFont(Punk_Mono_Bold_200_125);
-    gfx->setCursor(240, 192);
-    sprintf(ausgabe, "%5ig", tara);
-    gfx->print(ausgabe);
-    tara_alt = tara;
-  }
-  if (ina219_installed == 1 and current_mA != current_mA_alt and (current_servo > 0 or show_current == 1)) {
-    gfx->fillRect(240, 221, 80, 20, COLOR_BACKGROUND);
-    gfx->setFont(Punk_Mono_Bold_200_125);
-    gfx->setCursor(170, 238);
-    if (current_mA > current_servo and current_servo > 0) {
-      gfx->setTextColor(RED);
-    }
-    sprintf(ausgabe, "%10imA", current_mA);
-    gfx->print(ausgabe);
-    gfx->setTextColor(COLOR_TEXT);
-    current_mA_alt = current_mA;
-  }
-*/  
-
 if (servo_aktiv != servo_aktiv_alt) 
 { servo_aktiv_alt = servo_aktiv;
   if (servo_aktiv == 1)TFT_line_print(0, "MANUAL MODE DOSING");
   else TFT_line_print(0, "MANUAL MODE PAUSED");
 }
-
-/*
-  if (servo_aktiv != servo_aktiv_alt) {
-    gfx->fillRect(17, 79, 38, 38, COLOR_BACKGROUND);
-    gfx->setFont(Icons_Start_Stop);
-    gfx->setCursor(10, 123);
-    gfx->print("M"); // square
-    gfx->setCursor(10, 123);
-    if (servo_aktiv == 1) {
-      gfx->setTextColor(GREEN);
-      gfx->print("A"); // playing > symbol
-    }
-    else {
-      gfx->setTextColor(RED);
-      gfx->print("B"); // pauzed || symbol
-    }
-    servo_aktiv_alt = servo_aktiv;
-    gfx->setTextColor(COLOR_TEXT);
-  }
-*/
 
   if (alarm_overcurrent) {i = 1;}
   while (i > 0) {
@@ -2823,10 +2731,6 @@ if (servo_aktiv != servo_aktiv_alt)
         delay(1000);
       }
     }
-    //Servo ist offen
-    //else {
-    //  servo_aktiv = 0;
-    //}
     i = 0;
     inawatchdog = 1;
     alarm_overcurrent = 0;
@@ -3044,22 +2948,25 @@ void loop()
   }
   // Setup Menu 
   if ((digitalRead(switch_setup_pin)) == HIGH) {
-    NewHaniDisplayMode = HANI_SETUP;
+//    NewHaniDisplayMode = HANI_SETUP;
     processSetup();
   }
   // Automatik-Betrieb 
   else if ((digitalRead(switch_betrieb_pin)) == HIGH) {
-    NewHaniDisplayMode = HANI_AUTO;
+//    NewHaniDisplayMode = HANI_AUTO;
     processAutomatik();
-    delay(1000); // display even laten afwerken
   }
   // Handbetrieb 
   else if ((digitalRead(switch_betrieb_pin) == LOW) && (digitalRead(switch_setup_pin) == LOW)) {
-    if (modus != MODE_HANDBETRIEB)NewHaniDisplayMode = HANI_HAND; // only once
+    if (modus != MODE_HANDBETRIEB)
+    { ActLcdMode = 999; // force new display build
+      NewHaniDisplayMode = HANI_HAND; // only once
+    }
     processHandbetrieb();
   }
   else
-  { NewHaniDisplayMode = HANI_LOGO;
+  { 
+    NewHaniDisplayMode = HANI_LOGO;
   }
 }
 

@@ -2657,19 +2657,19 @@ void processHandbetrieb(void)
     servo_aktiv_alt = -1;
     delay(1000); // display omschakeling even de tijd geven
     //gfx->fillScreen(COLOR_BACKGROUND);
-    gfx->setTextColor(COLOR_TEXT);
+//    gfx->setTextColor(COLOR_TEXT);
     //gfx->setFont(Punk_Mono_Bold_320_200);
     //sprintf(ausgabe,"Manuell");
     //x_pos = CenterPosX(ausgabe, 18, 320);
     //gfx->setCursor(x_pos, 27);
     //gfx->print(ausgabe);
     //gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
-    gfx->setFont(Punk_Mono_Bold_200_125);
-    gfx->setCursor(5, 192);
+//    gfx->setFont(Punk_Mono_Bold_200_125);
+//    gfx->setCursor(5, 192);
     //gfx->print("Servo:");
     //gfx->drawLine(0, 170, 320, 170, COLOR_TEXT);
     //gfx->drawLine(160, 170, 160, 240, COLOR_TEXT);
-    gfx->setCursor(170, 192);
+//    gfx->setCursor(170, 192);
     //    gfx->print("Tara:");
     //  if (ina219_installed == 1) {
     //    gfx->setCursor(170, 215);
@@ -2681,9 +2681,6 @@ void processHandbetrieb(void)
     //    }
     //  }
     
-    TFT_line_print(3, "gram");
-    TFT_line_color(3, TFT_YELLOW, TFT_BLACK);
-    TFT_line_color(2, TFT_YELLOW, TFT_BLACK); // Big Weight number
   
   }
 

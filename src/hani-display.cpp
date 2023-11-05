@@ -470,6 +470,10 @@ Serial.println(NewHaniDisplayMode);
         BackGroundColor = TFT_DARKGREY;
         TextColor = TFT_WHITE;
         TFT_line_print(0, "MANUAL MODE");
+        TFT_line_print(3, "gram");
+        TFT_line_color(3, TFT_YELLOW, TFT_BLACK);
+        TFT_line_color(1, TFT_YELLOW, TFT_BLACK); // Big Weight number
+
         // TFT_line_print(5, "Choose Parameter & Select It");
         break;
       default: // Mode not yet covered
@@ -613,7 +617,7 @@ Serial.println(NewHaniDisplayMode);
       // print it 
       sprintf(text, "  %d  ", NewWeight);
       tft.setTextDatum(TC_DATUM);
-      tft.setTextColor(MyDisplay[2].textcolor, MyDisplay[2].canvascolor, true);
+      tft.setTextColor(MyDisplay[1].textcolor, MyDisplay[1].canvascolor, true);
       tft.drawString(text, 320/2, 60);
       UseFont(Arialnarrow26);
     }  

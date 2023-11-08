@@ -22,8 +22,13 @@ String version = "V1.0 by F.";
 extern void SetupMyDisplay(void);
 extern void TFT_line_print(int line, const char *content);
 extern void TFT_line_color(int line, int textcolor, int backgroundcolor);
+extern void TFT_line_blink(int line, bool blink);  
+
 extern bool bScrollNow;
 extern bool bUpdateDisplay;
+extern bool bBlinkDisplay;
+extern int  BlinkTimer10mS;
+
 extern int NewHaniDisplayMode;
 extern int ActLcdMode;
 extern int NewWeight;
@@ -109,9 +114,6 @@ Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
 #include "./Fonts/Punk_Mono_Thin_240_150.h"           //19 x 14
 #include "./Fonts/Icons_Start_Stop.h"                 //A=Start, B=Stop, M=Rahmen
 #include "./Fonts/Checkbox.h"                         //A=OK, B=nOK
-
-//Logos
-#include "./Logos/LogoBieneTFT.h"
 
 // new display control witt TFT_eSPI
 // display model and connections defined in platformio.ini
@@ -213,7 +215,7 @@ int lastpos = 0;                    // Letzte position im Setupmenü
 int progressbar = 0;                // Variable für den Progressbar
 int showlogo = 1;                   // 0 = aus, 1 = ein
 int showcredits = 1;                // 0 = aus, 1 = ein
-int ina219_installed = 0;           // 0 = kein INA219 instaliert, 1 = INA219 ist instaliert
+bool bINA219_installed = false;     
 int current_servo = 0;              // 0 = INA219 wird ignoriert, 1-1000 = erlaubter Maximalstrom vom Servo in mA
 int current_mA;                     // Strom welcher der Servo zieht
 int updatetime_ina219 = 500;        // Zeit in ms in welchem der INA219 gelesen wird (500 -> alle 0,5 sek wird eine Strommessung vorgenommen)
@@ -223,7 +225,7 @@ int last_overcurrenttime = 0;       // Letzte Zeit in welcher keinen Ueberstrom 
 int alarm_overcurrent = 0;          // Alarmflag wen der Servo zuwiel Strom zieht
 int show_current = 0;               // 0 = aus, 1 = ein / Zeige den Strom an auch wenn der INA ignoriert wird
 int inawatchdog = 1;                // 0 = aus, 1 = ein / wird benötigt um INA messung auszusetzen
-int offset_winkel = 0;              // Offset in Grad vom Schlieswinkel wen der Servo Übersrom hatte (max +3Grad vom eingestelten Winkel min)
+int offset_winkel = 0;              // Offset in Grad vom Schlieswinkel wen der Servo Überstrom hatte (max +3Grad vom eingestelten Winkel min)
 int color_scheme = 0;               // 0 = dunkel, 1 = hell / Wechsel vom color scheme für den TFT Display
 int color_marker_idx = 3;               // Farbe für den Marker für das TFT Display
 
@@ -2046,11 +2048,11 @@ void processSetup(void) {
   int x_pos;
   int MenuepunkteAnzahl = 9;
   int menuitem_old = -1;
-  if (ina219_installed) {MenuepunkteAnzahl++;}
+  if (bINA219_installed) {MenuepunkteAnzahl++;}
   int posmenu[MenuepunkteAnzahl];
   const char *menuepunkte[MenuepunkteAnzahl] = {"Tarawerte","Kalibrieren","Füllmenge","Automatik","Servoeinst.","Parameter","Zählwerk","ZählwerkTrip","Clear Prefs"};
   //MenuepunkteAnzahl = sizeof(menuepunkte)/sizeof(menuepunkte[0]);
-  if (ina219_installed) {
+  if (bINA219_installed) {
       menuepunkte[MenuepunkteAnzahl - 1] = menuepunkte[MenuepunkteAnzahl -2];    //Clear Pref eins nach hinten schieben
       menuepunkte[MenuepunkteAnzahl - 2] = "INA219 Setup";
   }
@@ -2189,7 +2191,7 @@ void processAutomatik(void) {
     gfx->print("INA219");
     gfx->setFont(Checkbox);
     gfx->setCursor(140, 199);
-    if (ina219_installed == 0){
+    if (bINA219_installed == 0){
       gfx->setTextColor(RED);
       gfx->print("B");
     }
@@ -2443,10 +2445,10 @@ void processAutomatik(void) {
       Serial.print(" auto_aktiv ");      Serial.println(auto_aktiv);
     #endif 
   #endif
-  if (ina219_installed and (current_servo > 0 or show_current == 1)) {
+  if (bINA219_installed && (current_servo > 0 or show_current == 1)) {
     y_offset = 4;
   }
-  if (ina219_installed == 1 and current_mA != current_mA_alt and (current_servo > 0 or show_current == 1)) {
+  if (bINA219_installed && (current_mA != current_mA_alt) && ((current_servo > 0) || (show_current == 1))) {
     gfx->fillRect(260, 187, 70, 18, COLOR_BACKGROUND);
     gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Thin_160_100);
@@ -2459,14 +2461,14 @@ void processAutomatik(void) {
     gfx->setTextColor(COLOR_TEXT);
     current_mA_alt = current_mA;
   }
-  else if (ina219_installed == 1 and no_ina == 0 and show_current == 0) {
+  else if (bINA219_installed && no_ina == 0 && show_current == 0) {
     no_ina = true;
     gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->setCursor(265, 202);
     gfx->print("   aus");
   }
-  else if (ina219_installed == 0 and no_ina == 0) {
+  else if (bINA219_installed && no_ina == 0) {
     no_ina = true;
     gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Thin_160_100);
@@ -2679,7 +2681,7 @@ void processHandbetrieb(void)
   }
   winkel = constrain(winkel, winkel_min + offset_winkel, winkel_max);
   SERVO_WRITE(winkel);
-  if (ina219_installed and (current_servo > 0 or show_current == 1)) {
+  if (bINA219_installed && (current_servo > 0 || show_current == 1)) {
     y_offset = 4;
   }
   #ifdef isDebug
@@ -2705,9 +2707,9 @@ void processHandbetrieb(void)
 
 
   // tarra value & current value for servo, printed on one line
-  if((tara != tara_alt) || ((ina219_installed == 1) && (current_mA != current_mA_alt) && (current_servo > 0 or show_current == 1)))
+  if((tara != tara_alt) || (bINA219_installed && (current_mA != current_mA_alt) && (current_servo > 0 or show_current == 1)))
   { sprintf(ausgabe, "Tarra: %3dg", tara);
-    if((ina219_installed == 1) && (current_mA != current_mA_alt) && (current_servo > 0 or show_current == 1))
+    if(bINA219_installed && (current_mA != current_mA_alt) && (current_servo > 0 or show_current == 1))
     { sprintf(&ausgabe[strlen(ausgabe)], " Servo: %dmA", current_mA);
     }
     TFT_line_print(4, ausgabe);
@@ -2760,6 +2762,12 @@ void IRAM_ATTR onTimer() // is called every 10mS
   { bUpdateDisplay = true; // display refresh max 10 times a second
   }
 
+  BlinkTimer10mS++;
+  if(BlinkTimer10mS>25)
+  { BlinkTimer10mS=0;
+    bBlinkDisplay = !bBlinkDisplay;
+  }
+
   if((interruptCounter % 100)==0) // each second
   { 
   }
@@ -2784,8 +2792,8 @@ void setup()
   gfx->fillScreen(COLOR_BACKGROUND);
   gfx->setUTF8Print(true);
     
-  SetupMyDisplay(); // in Z20jukeboxdisplay.cpp
-  delay(2000);
+  SetupMyDisplay(); // in hani-display.cpp
+  delay(500);
 
   Serial.println("Pin Config");
   // enable internal pull downs for digital inputs 
@@ -2794,19 +2802,21 @@ void setup()
   pinMode(switch_betrieb_pin, INPUT_PULLDOWN);
   pinMode(switch_setup_pin, INPUT_PULLDOWN);
   
-  // Try to initialize the INA219
+  // Check if we have a INA219 current sensor installed or not
   if (ina219.begin()) {
-    ina219_installed = 1;
-    #ifdef isDebug
-      Serial.println("INA219 chip gefunden");
-    #endif
+    bINA219_installed = true;
+    TFT_line_print(1, "INA219 Installed!");
+    TFT_line_color(1, TFT_BLACK, TFT_RED);
   }
   else {
+    bINA219_installed = false;
     current_servo = 0;                              // ignore INA wenn keiner gefunden wird
-    #ifdef isDebug
-      Serial.println("INA219 chip nicht gefunden");
-    #endif
+    TFT_line_print(1, "INA219 Not Installed!");
+    TFT_line_color(1, TFT_BLACK, TFT_RED);
+    TFT_line_blink(1, true);
   }
+  delay(2000);
+
   // Rotary
   pinMode(EncoderButton, INPUT_PULLUP);
   attachInterrupt(EncoderButton, isr1, FALLING);
@@ -2834,46 +2844,38 @@ void setup()
     scale.power_up();
     if (scale.read() != 0) {                          // Roli - Wenn 0, nehme ich an, das kein HX711 angeschlossen ist
       waage_vorhanden = 1;
-      #ifdef isDebug
-        Serial.println("Waage erkannt");
-      #endif
+      TFT_line_print(1, "Scale Found!");
+      TFT_line_color(1, TFT_BLACK, TFT_GREEN);
     }
   }
-
   buzzer(BUZZER_SHORT);
+  delay(2000);
 
   // Setup der Waage, Skalierungsfaktor setzen
   if (waage_vorhanden ==1) {                         // Waage angeschlossen?
     if (faktor == 0) {                               // Vorhanden aber nicht kalibriert
       TFT_line_print(1, "Scale Not Calibrated!");
-      TFT_line_color(1, TFT_RED, TFT_BLACK);
+      TFT_line_color(1, TFT_BLACK, TFT_RED);
+      TFT_line_blink(1, true);
       buzzer(BUZZER_ERROR);
-      #ifdef isDebug
-        Serial.println("Waage nicht kalibriert!");
-      #endif
-      delay(2000);
     }
     else {                                          // Tara und Skalierung setzen
       scale.set_scale(faktor);
       scale.set_offset(long(gewicht_leer));
-      #ifdef isDebug
-        Serial.println("Waage initialisiert");
-      #endif
+      TFT_line_print(1, "Scale Initialized!");
+      TFT_line_color(1, TFT_BLACK, TFT_GREEN);
     }
   }
   else {                                            // Keine Waage angeschlossen
     TFT_line_color(1, TFT_BLACK, TFT_RED);
     TFT_line_print(1, "No Scale Connected!"); 
-    delay(500);
-    TFT_line_color(1, TFT_RED, TFT_BLACK);
-    delay(500);
-    TFT_line_color(1, TFT_BLACK, TFT_RED);
+    TFT_line_blink(1, true);
+    delay(5000);
 
     buzzer(BUZZER_ERROR);
-    #ifdef isDebug
-      Serial.println("Keine Waage!");
-    #endif
   }
+  delay(2000);
+
   // initiale Kalibrierung des Leergewichts wegen Temperaturschwankungen
   // Falls mehr als 20g Abweichung steht vermutlich etwas auf der Waage.
   if (waage_vorhanden == 1) {
@@ -2888,7 +2890,9 @@ void setup()
       #endif
     }
     else if (faktor != 0) {
+      TFT_line_color(1, TFT_BLACK, TFT_RED);
       TFT_line_print(1, "Please Empty Scale"); 
+      TFT_line_blink(1, true);
       #ifdef isDebug
         Serial.print("Gewicht auf der Waage: ");
         Serial.println(gewicht);
@@ -2911,7 +2915,7 @@ void setup()
   }
  
   delay(2000);
-  TFT_line_print(4, ""); 
+  TFT_line_print(1, ""); // remove warnings 
   TFT_line_print(5, ""); // remove credits
   delay(2000);
   tft.fillScreen(TFT_BLACK);
@@ -2943,7 +2947,7 @@ void loop()
   delay(100);
   
   //INA219 Messung
-  if (ina219_installed and inawatchdog == 1 and (current_servo > 0 or show_current == 1) and (modus == MODE_HANDBETRIEB or modus == MODE_AUTOMATIK)) {
+  if (bINA219_installed and inawatchdog == 1 and (current_servo > 0 or show_current == 1) and (modus == MODE_HANDBETRIEB or modus == MODE_AUTOMATIK)) {
     ina219_measurement();
   }
   // Setup Menu 

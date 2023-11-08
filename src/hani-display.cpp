@@ -13,6 +13,9 @@ TFT_eSPI tft = TFT_eSPI(240,320);
 
 bool bScrollNow = false;
 bool bUpdateDisplay = false;
+bool bBlinkDisplay = false;
+int BlinkTimer10mS = 0;
+
 bool bPrintWeight = false;
 int  NewWeight = 0;
 int  OldWeight = -1234;
@@ -35,8 +38,6 @@ void UpdateLCD(void);
 
 
 #include "dial3.h"
-//#include "45rpm240.h"
-//#include "radio11400.h"
 
 void UseFont(const uint8_t* usethisfont)
 { static const uint8_t* activefont = (uint8_t*)-1;
@@ -85,8 +86,6 @@ void BuildGdxTable(void);
 uint16_t  bg_color = 0;
 int CanvasColor; // TFT_RED or something - for use of jpg as canvas set to -1
 
-char KnobDecals[]="ABCDEFGHJK1234567890"; // used to display chosen song as K-3 or something
-
 extern int rotary_loop(int resetvalue);
 
 // This next function will be called during decoding of the jpeg file to
@@ -109,7 +108,8 @@ void SetupMyDisplay(void)
   
   tft.init();
   tft.fillScreen(TFT_RED);
-  tft.setRotation(3); // using ST7789 display 
+  tft.setRotation(3); // 3 - using ST7789 320(w) x 240(h) with connector on lefthand side
+  tft.setRotation(1); // 3 - using ST7789 320(w) x 240(h) with connector on righthand side
   UseFont(Arialnarrow26);
   //tft.loadFont(Arialnarrow26);
   tft.setAttribute(UTF8_SWITCH, false); 
@@ -208,6 +208,14 @@ void TFT_line_color(int line, int textcolor, int backgroundcolor)
   }  
 }
 
+void TFT_line_blink(int line, bool blink)
+{ MyDisplay[line].blink = blink;
+  BlinkTimer10mS = 0; // reset the blink timer so blinking starts elegant
+  bBlinkDisplay = 0;
+}
+
+
+
 // buffers for 6 lines of text to display
 // deals with lenghts, checks if it fits on display or flags it as horizontal scroll text
 // converts UTF-8 up to U+00FF (latin-1 supplement) back to old school extended ascii
@@ -219,13 +227,8 @@ void TFT_line_print(int line, const char *content)
   
   if(line>=TFTNUMOFLINES)return;
   while(!done)
-  { // set colors to current global setting
-    //MyDisplay[line].backgroundcolor = BackGroundColor;
-    //MyDisplay[line].textcolor = TextColor;  
-
-    
-    if(xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE)
-    { Serial.println("Pak hem1");
+  { if(xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE)
+    { MyDisplay[line].blink = false; 
       // max 255 characters
       strncpy(extAscii, content, 255);
       extAscii[255]=0;
@@ -234,7 +237,6 @@ void TFT_line_print(int line, const char *content)
       if (MyDisplay[line].scroll == false) // non extended content, no " --- " added
       { if (strcmp(MyDisplay[line].content, extAscii) == 0)
         { // nothing new, why bother
-          Serial.println("En los1");
           xSemaphoreGive(xDisplayMutex);
           return;
         }
@@ -243,7 +245,6 @@ void TFT_line_print(int line, const char *content)
       if (MyDisplay[line].scroll == true)
       { if (strncmp(MyDisplay[line].content, extAscii, MyDisplay[line].length - 5) == 0)
         { // nothing new, why bother
-          Serial.println("En los2");
           xSemaphoreGive(xDisplayMutex);
           return;
         }
@@ -256,7 +257,8 @@ void TFT_line_print(int line, const char *content)
 
   
 
-      if (MyDisplay[line].pixelwidth > (320-50)) // does not fit, resort to horizontal scroll of this text
+//      if (MyDisplay[line].pixelwidth > (320-50)) // does not fit, resort to horizontal scroll of this text
+      if (MyDisplay[line].pixelwidth > (320 - (MyDisplay[line].rounded ? 50 : 6)) ) // does not fit, resort to horizontal scroll of this text
       { MyDisplay[line].scroll = true;
         strcat(extAscii, " --- "); // add --- to make it nicer when looping around
         strcpy(MyDisplay[line].content, extAscii);
@@ -269,7 +271,6 @@ void TFT_line_print(int line, const char *content)
 
       MyDisplay[line].scrollpos = 0;
       MyDisplay[line].scrolldelay = 200; // delayed start of scolling (not implemented)
-      Serial.println("En los3");
       xSemaphoreGive(xDisplayMutex);
     }
     done = true;  
@@ -281,74 +282,6 @@ void TFT_line_print(int line, const char *content)
 // in smooth_font.ccp ~line 210
 
 #define TYOFF 7 // y offset for all text lines to position it nicely in background
-#define LOGOSIZE 114
-
-// show small radio station logo
-bool UpdateRadioLogo(int NewLogo)
-{ 
-  char text[64];
-
-  // prepare a folder \art114\ with numbered jpg files for the station logo
-  // filename format radio-114-NN.jpg
-  // when no file with such name is found, a generic logo will be displayed (defined in radio11400.h)
-  tft.setViewport(120-(LOGOSIZE/2), ((40+40+40+ 20) - (LOGOSIZE/2) -2), LOGOSIZE, LOGOSIZE, true);
-  sprintf(text, "/art114/radio-114-%02d.jpg", NewLogo);
-  Serial.println(text);
-  File logo = SD.open(text); 
-  if(logo)
-  { logo.close();
-    TJpgDec.drawSdJpg(0, 0, text);
-  }
-  else
-  { logo.close();
-//    TJpgDec.drawJpg(0, 0, radio11400, sizeof(radio11400));
-  }
-  return true;
-}
-
-
-bool UpdateRadio(int NewShowRadio10mS)
-{ // 45RPM-240.jpg
-  static int OldShowRadio10mS = 0;
-  static int CurrentRadioShown = -1;
-
-  char text[32];
-  int tw, line, ycor;
-  if (OldShowRadio10mS != NewShowRadio10mS)
-  { if (OldShowRadio10mS == 0)
-    { // init display
-      //tft.fillScreen(MAGENTA);
-      uint16_t w = 0, h = 0;
-      TJpgDec.drawSdJpg(0, 0, "/art240/radio-240.jpg");
-      CurrentRadioShown = -1;
-    }
-    OldShowRadio10mS = NewShowRadio10mS;
-    if (NewShowRadio10mS)
-    { // laat zien dan
-      if (CurrentRadioShown != ActualRadioShown)
-      { CurrentRadioShown = ActualRadioShown;
-// ojee        TFT_line_print(5, RadioStations[NewRadioStation - 1][1]);
-        tw = MyDisplay[5].pixelwidth;
-        tft.fillRoundRect(  ((240 - tw) / 2) - 15   , (5*40)+2, tw + 30, 32, 16, BackGroundColor); // 12=radius 5 is de helft van 10
-        tft.setTextDatum(TC_DATUM);
-        tft.drawString(MyDisplay[5].content, 120, (5*40)+TYOFF); // centered around x coordinate 120
-      }
-    }
-    else
-    { // LCD back to normal
-      // so refresh entire display
-      MyDisplay[0].refresh = true;
-      MyDisplay[1].refresh = true;
-      MyDisplay[2].refresh = true;
-      MyDisplay[3].refresh = true;
-      MyDisplay[4].refresh = true;
-      MyDisplay[5].refresh = true;
-
-      return true;
-    }
-  }
-  return false;
-}
 
 
 bool UpdateLCDpotentiometer(int NewShowVolume10mS)
@@ -418,21 +351,24 @@ void UpdateLCD(void)
   { ActLcdMode = NewHaniDisplayMode;
 Serial.println(NewHaniDisplayMode);
     // good riddance
+    for (line = 0; line < TFTNUMOFLINES; line++)
+    { TFT_line_print(line, "");
+      MyDisplay[line].rounded = (line>0);  
+    }
     switch (ActLcdMode) // on this mode change, fill the text lines with appropriate data
     { case HANI_LOGO:
         for (line = 0; line < TFTNUMOFLINES; line++)
-        { TFT_line_print(line, "");
-          MyDisplay[line].backgroundcolor = TFT_DARKGREY;
+        { MyDisplay[line].backgroundcolor = TFT_DARKGREY;
           MyDisplay[line].textcolor = TFT_WHITE;  
           MyDisplay[line].canvascolor = -1;  
         }
         TJpgDec.drawJpg(0, 0, flowers, sizeof(flowers));
+        MyDisplay[5].rounded = false;
         TFT_line_print(5, Credits);
         break;
       case HANI_SETUP:
         for (line = 0; line < TFTNUMOFLINES; line++)
-        { TFT_line_print(line, "");
-          MyDisplay[line].backgroundcolor = TFT_DARKGREY;
+        { MyDisplay[line].backgroundcolor = TFT_DARKGREY;
           MyDisplay[line].textcolor = TFT_WHITE;  
           MyDisplay[line].canvascolor = TFT_RED;  
         }
@@ -443,8 +379,7 @@ Serial.println(NewHaniDisplayMode);
         break;
       case HANI_AUTO:
         for (line = 0; line < TFTNUMOFLINES; line++)
-        { TFT_line_print(line, "");
-          MyDisplay[line].backgroundcolor = TFT_DARKGREY;
+        { MyDisplay[line].backgroundcolor = TFT_DARKGREY;
           MyDisplay[line].textcolor = TFT_WHITE;  
           MyDisplay[line].canvascolor = TFT_GREEN;  
         }
@@ -458,11 +393,11 @@ Serial.println(NewHaniDisplayMode);
         break;
       case HANI_HAND:
         for (line = 0; line < TFTNUMOFLINES; line++)
-        { TFT_line_print(line, "");
-          MyDisplay[line].backgroundcolor = TFT_DARKGREY;
+        { MyDisplay[line].backgroundcolor = TFT_DARKGREY;
           MyDisplay[line].textcolor = TFT_WHITE;  
           MyDisplay[line].canvascolor = TFT_BLACK;  
         }
+        // MyDisplay[5].rounded = false;
         CanvasColor = TFT_BLACK; 
         tft.fillScreen(CanvasColor);
         BackGroundColor = TFT_DARKGREY;
@@ -471,7 +406,6 @@ Serial.println(NewHaniDisplayMode);
         TFT_line_print(3, "gram");
         TFT_line_color(3, TFT_YELLOW, TFT_BLACK);
         TFT_line_color(1, TFT_YELLOW, TFT_BLACK); // Big Weight number
-
         // TFT_line_print(5, "Choose Parameter & Select It");
         break;
       default: // Mode not yet covered
@@ -518,28 +452,37 @@ Serial.println(NewHaniDisplayMode);
      if (tw > (320-40))tw = (320-40);
      tft.setViewport(0, (line * 40), 320, 40, true);
      
-     // first wipe out old stuff by printing background or printing partial jpg
-     if (line > 0)
-     { if (MyDisplay[line].scroll == false)
-       { if(MyDisplay[line].canvascolor >= 0)
-         { tft.fillRoundRect(0, 2, 320, 32, 0, MyDisplay[line].canvascolor); // radius 0 makes it a square
+     // first wipe out old stuff by reprinting canvas or printing partial jpg
+     if (MyDisplay[line].rounded) // not needed for square lines, only for rounded lines
+     { if (MyDisplay[line].scroll == false) // not needed for scroll texts as these are full size anyway
+       { if(MyDisplay[line].canvascolor >= 0) // fixed color, not jpg canvas 
+         {  if(MyDisplay[line].pixelwidth < MyDisplay[line].lastpixelwidth) // restauration canvas is needed
+            { tft.fillRoundRect(0, 2, 320, 32, 0, MyDisplay[line].canvascolor); // radius 0 makes it a square
+            }
          }
          else
-         { // drawJpg respects the viewport, but we have to move the jpg upwards to get the right portion of the jpg printed
+         { // drawJpg respects the viewport, but we have to move the jpg upwards to get the right portion of the jpg printed in viewport
            TJpgDec.drawJpg(0, -(line * 40), flowers, sizeof(flowers));
          }
        }
      }
      
      // now print background box for text, square for line 0 and rounded for other lines
-     if (line == 0)tft.fillRoundRect(0, 0, 320, 34, 0, MyDisplay[line].backgroundcolor); // radius 0 makes it a square
+     if (!MyDisplay[line].rounded)
+     { if(MyDisplay[line].pixelwidth != MyDisplay[line].lastpixelwidth)
+       { //tft.fillRoundRect(0, 0, 320, 34, 0, MyDisplay[line].backgroundcolor); // radius 0 makes it a square
+         tft.fillRect(0, 0, 320, 34, MyDisplay[line].backgroundcolor); // radius 0 makes it a square
+       }
+     }  
      else
      { if(tw>0) // there is something to print
-       { if(MyDisplay[line].canvascolor<0) // jpg as background
-         { tft.fillRoundRect(  ((320 - tw) / 2) - 15   ,  2, tw + 30, 32, 16, MyDisplay[line].backgroundcolor); 
-         }
-         else
-         { tft.fillSmoothRoundRect(((320 - tw) / 2) - 15, 2, tw+30, 32, 16, MyDisplay[line].backgroundcolor, MyDisplay[line].canvascolor);
+       { if(MyDisplay[line].pixelwidth != MyDisplay[line].lastpixelwidth) // restauration is needed
+         { if(MyDisplay[line].canvascolor<0) // jpg as background
+           { tft.fillRoundRect(  ((320 - tw) / 2) - 15   ,  2, tw + 30, 32, 16, MyDisplay[line].backgroundcolor); 
+           }
+           else
+           { tft.fillSmoothRoundRect(((320 - tw) / 2) - 15, 2, tw+30, 32, 16, MyDisplay[line].backgroundcolor, MyDisplay[line].canvascolor);
+           }
          }
        }
      }
@@ -548,9 +491,34 @@ Serial.println(NewHaniDisplayMode);
      { if (!MyDisplay[line].scroll) // this text does not scroll
        { tft.setTextColor(MyDisplay[line].textcolor, MyDisplay[line].backgroundcolor, true);
          tft.drawString(MyDisplay[line].content, 320/2, TYOFF); // centered around x coordinate 120
+         MyDisplay[line].lastpixelwidth = MyDisplay[line].pixelwidth; // so we can check later if this is a shorter or longer text to fine tune canvas restoration
        }
      }  
      MyDisplay[line].refresh = false;
+     BlinkTimer10mS = 0; // reset the blink timer so blinking starts elegant
+     bBlinkDisplay = 0;
+   }
+   else if(MyDisplay[line].blink == true)  
+   { if(BlinkTimer10mS) 
+     { tft.setTextDatum(TC_DATUM); // horizontally centered for text that is not scrolling
+       tw = MyDisplay[line].pixelwidth;
+       if (tw > (320-40))tw = (320-40);
+       tft.setViewport(0, (line * 40), 320, 40, true);
+       if(tw>0) 
+       { if(!bBlinkDisplay) // print normal
+         { tft.setTextColor(MyDisplay[line].textcolor, MyDisplay[line].backgroundcolor, true);
+           tft.drawString(MyDisplay[line].content, 320/2, TYOFF); // centered around x coordinate 120
+         }
+         else // print nothing as part of the blink display
+         { if(MyDisplay[line].canvascolor<0) // jpg as background
+           { tft.fillRoundRect(  ((320 - tw) / 2) - 15   ,  2, tw + 30, 32, 16, MyDisplay[line].backgroundcolor); 
+           }
+           else
+           { tft.fillSmoothRoundRect(((320 - tw) / 2) - 15, 2, tw+30, 32, 16, MyDisplay[line].backgroundcolor, MyDisplay[line].canvascolor);
+           }
+         }
+       } 
+     }
    }
  } 
   
@@ -581,7 +549,7 @@ Serial.println(NewHaniDisplayMode);
        }
   
        if(bUpdateDisplay) // set true every 100mS for a 10 frames per seconde update
-       { tft.setViewport(25, (line * 40), 320-50, 40);
+       { tft.setViewport((MyDisplay[line].rounded ? 25 : 3), (line * 40), (320 - (MyDisplay[line].rounded ? 50 : 6)), 40); // bigger viewport for square box
          tft.setTextColor(MyDisplay[line].textcolor, MyDisplay[line].backgroundcolor, true);
          tft.drawString(&MyDisplay[line].content[MyDisplay[line].nchar-1], MyDisplay[line].toeat - MyDisplay[line].noffset, TYOFF);
          if((MyDisplay[line].pixelwidth - MyDisplay[line].scrollpos) < (320-25))

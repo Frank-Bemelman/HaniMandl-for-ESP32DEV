@@ -10,14 +10,17 @@ struct TFTline
 { bool refresh;
   char content[256];
   bool scroll;
-  int length;
-  int pixelwidth;
-  int scrollpos;
-  int scrolldelay;
-  int nchar;
-  int toeat;
-  int noffset;
-  int textcolor;
-  int backgroundcolor;
-  int canvascolor;
+  int  length;
+  int  pixelwidth;
+  int  scrollpos;
+  int  scrolldelay;
+  int  nchar;
+  int  toeat;
+  int  noffset;
+  int  textcolor;
+  int  backgroundcolor;
+  int  canvascolor;
+  bool blink;
+  int  lastpixelwidth;
+  bool rounded; // background box rounded or not
 };

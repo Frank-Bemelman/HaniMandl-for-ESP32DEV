@@ -5,7 +5,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-#include <HX711.h>                  /* aus dem Bibliotheksverwalter */
+//#include <HX711.h>                  /* aus dem Bibliotheksverwalter */
 #include <ESP32Servo.h>             /* aus dem Bibliotheksverwalter */
 #include <Adafruit_INA219.h>        /* aus dem Bibliotheksverwalter */
 #include <Preferences.h>            /* aus dem BSP von expressif, wird verfügbar wenn das richtige Board ausgewählt ist */
@@ -15,7 +15,8 @@
 
 #include "hani.h"
 #include "Arialbd72.h"
-
+//#include "HX711.h"
+#include <HX711_ADC.h>
 
 // Version
 String version = "V1.0 by F.";
@@ -23,6 +24,9 @@ extern void SetupMyDisplay(void);
 extern void TFT_line_print(int line, const char *content);
 extern void TFT_line_color(int line, int textcolor, int backgroundcolor);
 extern void TFT_line_blink(int line, bool blink);  
+extern void SetupButtons(void);
+extern void ReadButtons(void * pvParameters);
+extern void SelectMenu(int menu);
 
 extern bool bScrollNow;
 extern bool bUpdateDisplay;
@@ -33,19 +37,35 @@ extern int NewHaniDisplayMode;
 extern int ActLcdMode;
 extern int NewWeight;
 extern int OldWeight;
+
+extern bool deb_start_button;
+extern bool deb_stop_button;
+extern bool deb_encoder_button;
+extern bool deb_setup_switch;
+extern bool deb_auto_switch;
+extern bool deb_manual_switch;
+
+extern int start_button_f;
+extern int stop_button_f;
+extern int encoder_button_f;
+extern int setup_switch_f;
+extern int auto_switch_f;
+extern int manual_switch_f;
+
+
+//HX711 constructor:
+const int HX711_dout = 35; //mcu > HX711 dout pin, must be external interrupt capable!
+const int HX711_sck = 17; //mcu > HX711 sck pin
+HX711_ADC LoadCell(HX711_dout, HX711_sck);
+float calibrationValue;
+volatile boolean newDataReady;
+
 //
 // Hier den Code auf die verwendete Hardware einstellen
 //
 
-#define SCALE_TYP 2               // 1 = 2kg Wägezelle
-                                  // 2 = 5kg Wägezelle
-#define SERVO_ERWEITERT           // definieren, falls die Hardware mit dem alten Programmcode mit Poti aufgebaut wurde oder der Servo zu wenig fährt
-                                  // Sonst bleibt der Servo in Stop-Position einige Grad offen! Nach dem Update erst prüfen!
-#define ROTARY_SCALE 2            // number of steps for each click of your rotary encoder used
-
-//#define FEHLERKORREKTUR_WAAGE   // falls Gewichtssprünge auftreten, können diese hier abgefangen werden
-                                  // Achtung, kann den Wägeprozess verlangsamen. Vorher Hardware prüfen.
-//#define QUETSCHHAHN_LINKS       // Servo invertieren, falls der Quetschhahn von links geöffnet wird. Mindestens ein Exemplar bekannt
+#define ROTARY_SCALE 2         // number of steps for each click of your rotary encoder used
+//#define SERVO_REVERSED       // Servo invertieren, falls der Quetschhahn von links geöffnet wird. Mindestens ein Exemplar bekannt
 //
 // Ende Benutzereinstellungen!
 // 
@@ -58,27 +78,17 @@ extern int OldWeight;
                                 // mit 5 zusätzlich rotary debug-Infos
                                 // ACHTUNG: zu viel Serieller Output kann einen ISR-Watchdog Reset auslösen!
 
-#if SCALE_TYP == 1
-  #define MAXIMALGEWICHT 1500     // Maximales Gewicht für 2kg Wägezelle
-#elif SCALE_TYP == 2
-  #define MAXIMALGEWICHT 4500     // Maximales Gewicht für 5kg Wägezelle
-#else
-  #error Keine Wägezelle definiert
-#endif
-
-// Ansteuerung der Waage
-#define SCALE_READS 2           // Parameter für hx711 Library. Messwert wird aus der Anzahl gemittelt
-#define SCALE_GETUNITS(n)       round(scale.get_units(n))
+#define MAXIMALGEWICHT 4500     // maximum allowed weight in gram - 1500 for 2kg loadcell - 4500 for 5kg loadcell
 
 // Ansteuerung Servo
-#ifdef QUETSCHHAHN_LINKS
+#ifdef SERVO_REVERSED
   #define SERVO_WRITE(n)     servo.write(180-n)
 #else
   #define SERVO_WRITE(n)     servo.write(n)
 #endif
 
 
-// Betriebsmodi 
+// operation mode as set by 3 way switch
 #define MODE_SETUP       0
 #define MODE_AUTOMATIK   1
 #define MODE_HANDBETRIEB 2
@@ -92,10 +102,6 @@ extern int OldWeight;
 // INA 219
 Adafruit_INA219 ina219;
 
-// Display ST7789
-// TFT_MISO=19  ; not available on my ST7789, combined with SDA MOSI=23
-//TFT_MOSI=23  ; SDA of ST7789
-//TFT_SCLK=18  ; SCL of ST7789
 
 Arduino_DataBus *bus = new Arduino_HWSPI(13 /* DC */, 5 /* CS */);
 Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
@@ -115,36 +121,22 @@ Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
 #include "./Fonts/Icons_Start_Stop.h"                 //A=Start, B=Stop, M=Rahmen
 #include "./Fonts/Checkbox.h"                         //A=OK, B=nOK
 
-// new display control witt TFT_eSPI
-// display model and connections defined in platformio.ini
+// new display control with TFT_eSPI
+// Display ST7789 - set per build flags in platformio.ini
 // no changes made to TFT_ESPI library
+// TFT_MISO=19  ; not available on my ST7789, combined with SDA MOSI=23
+// TFT_MOSI=23  ; SDA of ST7789
+// TFT_SCLK=18  ; SCL of ST7789
 extern TFT_eSPI tft;  // invoke TFT_eSPI library in hani-display.cpp
 
-// Pin Definitions
-// ESP32-DEVKIT 30 Pins Connector
+// Hardware Pin Definitions located in HANI.H
+// Target ESP32-DEVKIT 30 Pins Connector
 
-// Rotary Encoder
-#define EncoderA 33
-#define EncoderB 26
-#define EncoderButton 32
-
-// Servo
-const int servo_pin = 2;
-// 3x Schalter Ein 1 - Aus - Ein 2, VCC pins wurden direkt auf VCC gelegt
-const int switch_betrieb_pin = 15;
-const int switch_setup_pin   = 4;
-// Taster, VCC pins wurden direkt auf VCC gelegt
-const int button_start_pin     = 12;
-const int button_stop_pin      = 27;
-// Wägezelle-IC 
-const int hx711_sck_pin = 17;
-const int hx711_dt_pin  = 35;
 // Buzzer and LED
 static int buzzer_pin = 25;
 int led_pin = 0;
 
 Servo servo;
-HX711 scale;
 Preferences preferences;
 
 // Denstrukturen für Rotary Encoder
@@ -331,8 +323,8 @@ void IRAM_ATTR isr2() {
   static int aState;
   static int bState;
   static int aLastState; 
-  aState = digitalRead(EncoderA); // Reads the "current" state of the encoder
-  bState = digitalRead(EncoderB); // Reads the "current" state of the encoder
+  aState = digitalRead(ROTARY_ENCODER_A); // Reads the "current" state of the encoder
+  bState = digitalRead(ROTARY_ENCODER_B); // Reads the "current" state of the encoder
   if (aState != aLastState) {     
     // If the outputB state is different to the outputA state, that means the encoder is turned clockwise
     if (aState != bState) {
@@ -375,15 +367,15 @@ void initRotaries( int rotary_mode, int rotary_value, int rotary_min, int rotary
 // Ende Funktionen für den Rotary Encoder
 //
 boolean EncoderButtonTapped(void)
-{ if (digitalRead(EncoderButton) == LOW) {
-    while(digitalRead(EncoderButton) == LOW);
+{ if (digitalRead(ENCODER_BUTTON) == LOW) {
+    while(digitalRead(ENCODER_BUTTON) == LOW);
     return true;
   }  
   else return false;
 }    
 
 boolean EncoderButtonPressed(void)
-{ if (digitalRead(EncoderButton) == LOW) {
+{ if (digitalRead(ENCODER_BUTTON) == LOW) {
     return true;
   }
   else return false;
@@ -612,8 +604,8 @@ void setupTripCounter(void) {
   gfx->println(title);
   gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   while (i > 0) { //Erster Screen: Anzahl pro Glasgröße
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
@@ -633,8 +625,8 @@ void setupTripCounter(void) {
   }
   i = 1;
   while (i > 0) { //Zweiter Screen: Gewicht pro Glasgröße
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
@@ -655,8 +647,8 @@ void setupTripCounter(void) {
   i = 1;
   while (i > 0) { //Dritter Screen: Gesamtgewicht
     TripAbfuellgewicht = 0;
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
@@ -673,9 +665,9 @@ void setupTripCounter(void) {
     gfx->setCursor(x_pos, 184);
     gfx->print(ausgabe);
     gfx->setFont(Punk_Mono_Bold_240_150);
-    if (digitalRead(EncoderButton) == LOW) {
+    if (digitalRead(ENCODER_BUTTON) == LOW) {
       //verlasse Screen
-      while(digitalRead(EncoderButton) == LOW);
+      while(digitalRead(ENCODER_BUTTON) == LOW);
       i = 0;
       gfx->fillRect(0, 31, 320, 209, COLOR_BACKGROUND);
     }
@@ -686,8 +678,8 @@ void setupTripCounter(void) {
     rotaries[SW_MENU].Value = 1;
     i = 1;
     while (i > 0) {
-      if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-        while (digitalRead(button_stop_pin) == HIGH);
+      if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+        while (digitalRead(BUTTON_STOP) == HIGH);
         modus = -1;
         return;
       }
@@ -700,7 +692,7 @@ void setupTripCounter(void) {
       if (pos == 1) {gfx->setTextColor(COLOR_MARKER);}
       else {gfx->setTextColor(COLOR_TEXT);}
       gfx->print("Abbrechen");
-      if (digitalRead(EncoderButton) == LOW) {
+      if (digitalRead(ENCODER_BUTTON) == LOW) {
         gfx->setTextColor(COLOR_MARKER);
         gfx->setCursor(283, 30+((pos+1) * y_offset_tft));
         gfx->print("OK");
@@ -730,8 +722,8 @@ void setupCounter(void) {
   gfx->println(title);
   gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   while (i > 0) { //Erster Screen: Anzahl pro Glasgröße
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
@@ -751,8 +743,8 @@ void setupCounter(void) {
   }
   i = 1;
   while (i > 0) { //Zweiter Screen: Gewicht pro Glasgröße
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
@@ -773,8 +765,8 @@ void setupCounter(void) {
   i = 1;
   while (i > 0) { //Dritter Screen: Gesamtgewicht
     Abfuellgewicht = 0;
-    if (digitalRead(button_stop_pin) == HIGH  or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH  or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
@@ -801,8 +793,8 @@ void setupCounter(void) {
     rotaries[SW_MENU].Value = 1;
     i = 1;
     while (i > 0) {
-      if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-        while (digitalRead(button_stop_pin) == HIGH);
+      if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+        while (digitalRead(BUTTON_STOP) == HIGH);
         modus = -1;
         return;
       }
@@ -844,13 +836,13 @@ void setupTara(void) {
   bool change = false;
   const char menu[] = "Tarawerte Gläser";
   while (i == 0)  {
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
     else if (EncoderButtonPressed()) {
-      tara = int(SCALE_GETUNITS(10));
+      tara = round(LoadCell.getData());
       if (tara > 20) {                  // Gläser müssen mindestens 20g haben
          glaeser[getRotariesValue(SW_MENU)].Tara = tara;
       }
@@ -917,14 +909,16 @@ void setupCalibration(void) {
   gfx->setCursor(x_pos, 156); gfx->print(ausgabe);
   i = 1;
   while (i > 0) {
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
     else if (EncoderButtonPressed()) {
-      scale.set_scale();
-      scale.tare(10);
+      LoadCell.setCalFactor(1); 
+      // scale.set_offset(long(gewicht_leer));
+//      scale.set_scale(); // set scale to 1
+      LoadCell.tare();
       delay(500);
       i = 0;
     }
@@ -939,8 +933,8 @@ void setupCalibration(void) {
   initRotaries(SW_MENU, kali_gewicht, 100, 9999, 1); 
   i = 1;
   while (i > 0) {
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
@@ -975,10 +969,12 @@ void setupCalibration(void) {
       kali_gewicht_old = kali_gewicht;
     }
     if (EncoderButtonPressed()) {
-      gewicht_raw  = scale.get_units(10);
+//      gewicht_raw  = scale.get_units(10);
+      gewicht_raw = round(LoadCell.getData());
       faktor       = gewicht_raw / kali_gewicht;
-      scale.set_scale(faktor);
-      gewicht_leer = scale.get_offset();    // Leergewicht der Waage speichern
+//      scale.set_scale(faktor);
+      LoadCell.setCalFactor(faktor); 
+      gewicht_leer = LoadCell.getTareOffset();    // Leergewicht der Waage speichern
       #ifdef isDebug
         Serial.print("kalibrier_gewicht = ");
         Serial.println(kali_gewicht);
@@ -1021,8 +1017,8 @@ void setupServoWinkel(void) {
   gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   i = 1;
   while (i > 0) {
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       winkel_min  = lastmin;
       winkel_fein = lastfein;
       winkel_max  = lastmax;
@@ -1173,8 +1169,8 @@ void setupAutomatik(void) {
   initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
   i = 1;
   while (i > 0) {
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       autostart     = lastautostart;
       autokorrektur = lastautokorrektur;
       kulanz_gr     = lastkulanz;
@@ -1327,8 +1323,8 @@ void setupFuellmenge(void) {
   initRotaries(SW_MENU, fmenge_index, 0, 4, -1);
   i = 1;
   while (i > 0) {
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
@@ -1364,7 +1360,7 @@ void setupFuellmenge(void) {
   i = 1;
   initRotaries(SW_MENU, weight2step(glaeser[pos].Gewicht) , 25, weight2step(MAXIMALGEWICHT), 1);
   while (i > 0){
-    if ((digitalRead(button_stop_pin)) == HIGH  or digitalRead(switch_setup_pin) == LOW) {
+    if ((digitalRead(BUTTON_STOP)) == HIGH  or digitalRead(SWITCH_SETUP) == LOW) {
       modus = -1;
       return;
     }
@@ -1402,8 +1398,8 @@ void setupFuellmenge(void) {
   i = 1;
   initRotaries(SW_MENU, glaeser[pos].GlasTyp, 0, sizeof(GlasTypArray)/sizeof(GlasTypArray[0]) - 1, 1);
   while (i > 0){ 
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
@@ -1468,8 +1464,8 @@ void setupParameter(void) {
   initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
   i = 1;
   while (i > 0) {
-    if (digitalRead(button_stop_pin) == HIGH or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       buzzermode = lastbuzzer;
       ledmode = lastled;
       showlogo = lastlogo;
@@ -1638,8 +1634,8 @@ void setupClearPrefs(void) {
   gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
   i = 1;
   while (i > 0) {
-    if (digitalRead(button_stop_pin) == HIGH  or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH  or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
@@ -1713,8 +1709,8 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
   initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
   i = 1;
   while (i > 0) {
-    if (digitalRead(button_stop_pin) == HIGH  or digitalRead(switch_setup_pin) == LOW) {
-      while (digitalRead(button_stop_pin) == HIGH);
+    if (digitalRead(BUTTON_STOP) == HIGH  or digitalRead(SWITCH_SETUP) == LOW) {
+      while (digitalRead(BUTTON_STOP) == HIGH);
       current_servo = lastcurrent;
       winkel_min = lastwinkel_min;
       show_current = lastshow_current;
@@ -1836,7 +1832,7 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
       i = 0;
     }
     while (j > 0) {
-      if (digitalRead(switch_setup_pin) == LOW) {
+      if (digitalRead(SWITCH_SETUP) == LOW) {
         current_servo = lastcurrent;
         show_current = lastshow_current;
         modus = -1;
@@ -1900,8 +1896,8 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
         wert_aendern = false;
       }
       //verlassen
-      if ((EncoderButtonPressed() && menuitem == 6) or digitalRead(button_stop_pin) == HIGH) {
-        while(EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH);
+      if ((EncoderButtonPressed() && menuitem == 6) or digitalRead(BUTTON_STOP) == HIGH) {
+        while(EncoderButtonPressed() or digitalRead(BUTTON_STOP) == HIGH);
         gfx->fillScreen(COLOR_BACKGROUND);
         x_pos = CenterPosX(title, 14, 320);
         gfx->setCursor(x_pos, 25);
@@ -1973,8 +1969,8 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
             scaletime = millis();
           }
           //verlassen
-          if (EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH) {
-            while(EncoderButtonPressed() or digitalRead(button_stop_pin) == HIGH);
+          if (EncoderButtonPressed() or digitalRead(BUTTON_STOP) == HIGH) {
+            while(EncoderButtonPressed() or digitalRead(BUTTON_STOP) == HIGH);
             gfx->fillScreen(COLOR_BACKGROUND);
             gfx->setTextColor(COLOR_TEXT);
             x_pos = CenterPosX(title, 14, 320);
@@ -2016,8 +2012,8 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
             change = false;
           }
           //verlassen
-          if (digitalRead(button_stop_pin) == HIGH) {
-            while(digitalRead(button_stop_pin) == HIGH);
+          if (digitalRead(BUTTON_STOP) == HIGH) {
+            while(digitalRead(BUTTON_STOP) == HIGH);
             k = 0;
             wert_aendern = false;
             menuitem_used = 2;
@@ -2062,7 +2058,7 @@ void processSetup(void) {
   SERVO_WRITE(winkel);
   rotary_select = SW_MENU;
   initRotaries(SW_MENU, lastpos, -1, MenuepunkteAnzahl, 1);
-  while (modus == MODE_SETUP and (digitalRead(switch_setup_pin)) == HIGH) {
+  while (modus == MODE_SETUP and (digitalRead(SWITCH_SETUP)) == HIGH) {
     if (rotaries[SW_MENU].Value < 0) {
       rotaries[SW_MENU].Value = (MenuepunkteAnzahl * ROTARY_SCALE) - 1;
     }
@@ -2176,13 +2172,13 @@ void processAutomatik(void) {
     servo_aktiv_alt = -1;
     auto_aktiv_alt = -1;
     gewicht_alt = -9999999;
-    gfx->fillScreen(COLOR_BACKGROUND);
-    gfx->setTextColor(COLOR_TEXT);
-    gfx->setFont(Punk_Mono_Bold_320_200);
-    sprintf(ausgabe,"Automatik");
-    x_pos = CenterPosX(ausgabe, 18, 320);
-    gfx->setCursor(x_pos, 27);
-    gfx->print(ausgabe);
+    // gfx->fillScreen(COLOR_BACKGROUND);
+    //gfx->setTextColor(COLOR_TEXT);
+    //gfx->setFont(Punk_Mono_Bold_320_200);
+    //sprintf(ausgabe,"Automatik");
+    //x_pos = CenterPosX(ausgabe, 18, 320);
+    //gfx->setCursor(x_pos, 27);
+    //gfx->print(ausgabe);
     gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
     gfx->drawLine(0, 184, 320, 184, COLOR_TEXT);
     gfx->drawLine(160, 184, 160, 240, COLOR_TEXT);
@@ -2256,8 +2252,8 @@ void processAutomatik(void) {
   }
   // wir starten nur, wenn das Tara für die Füllmenge gesetzt ist!
   // Ein erneuter Druck auf Start erzwingt die Aktivierung des Servo
-  if (digitalRead(button_start_pin) == HIGH && tara > 0) {
-    while(digitalRead(button_start_pin) == HIGH);
+  if (digitalRead(BUTTON_START) == HIGH && tara > 0) {
+    while(digitalRead(BUTTON_START) == HIGH);
     if (auto_aktiv == 1) {
       erzwinge_servo_aktiv = 1;
       #ifdef isDebug
@@ -2270,24 +2266,15 @@ void processAutomatik(void) {
     glas_alt = -1;                              // Glas Typ Farbe zurücksetzen fals markiert ist
     korr_alt = -99999;                          // Korrektur Farbe zurücksetzen fals markiert ist
   }
-  if (digitalRead(button_stop_pin) == HIGH) {
+  if (digitalRead(BUTTON_STOP) == HIGH) {
     winkel      = winkel_min + offset_winkel;
     servo_aktiv = 0;
     auto_aktiv  = 0;
     tara_glas   = 0;
   }
-// Fehlerkorrektur der Waage, falls Gewicht zu sehr schwankt 
-  #ifdef FEHLERKORREKTUR_WAAGE
-    int Vergleichsgewicht = (int(SCALE_GETUNITS(SCALE_READS))) - tara;
-    for (byte j = 0 ; j < 3; j++) { // Anzahl der Wiederholungen, wenn Abweichung zu hoch
-      gewicht = int(SCALE_GETUNITS(SCALE_READS)) - tara;
-      if (abs(gewicht - Vergleichsgewicht) < 50)  // Abweichung für Fehlererkennung
-        break; 
-      delay(100);
-    }
-  #else
-    gewicht = int(SCALE_GETUNITS(SCALE_READS)) - tara;
-  #endif 
+
+  gewicht = round(LoadCell.getData()) - tara;
+
   // Glas entfernt -> Servo schliessen
   if (gewicht < -20) {
     winkel      = winkel_min + offset_winkel;
@@ -2333,7 +2320,7 @@ void processAutomatik(void) {
     gfx->print("START");
     // kurz warten und prüfen ob das Gewicht nicht nur eine zufällige Schwankung war 
     delay(1500);  
-    gewicht = int(SCALE_GETUNITS(SCALE_READS)) - tara;
+    gewicht = round(LoadCell.getData()) - tara;
     if (abs(gewicht) <= glastoleranz) {
       tara_glas   = gewicht;
       gfx->fillRect(109, 156, 211, 27, COLOR_BACKGROUND);
@@ -2643,6 +2630,7 @@ void processAutomatik(void) {
 void processHandbetrieb(void) 
 { i = 0;
   int y_offset = 0;
+  
   if (modus != MODE_HANDBETRIEB) // draw screen just once
   { modus = MODE_HANDBETRIEB;
     winkel = winkel_min;          // Hahn schliessen
@@ -2659,42 +2647,38 @@ void processHandbetrieb(void)
     tara_alt = -1;
     current_mA_alt = -1;
     servo_aktiv_alt = -1;
-    delay(500); // display omschakeling even de tijd geven
+  }
+  
+  pos = getRotariesValue(SW_WINKEL);
+  gewicht = round(LoadCell.getData()) - tara;
+
+  if(deb_start_button)servo_aktiv = 1;
+  if(deb_stop_button)servo_aktiv = 0;
+
+  if (servo_aktiv != servo_aktiv_alt) 
+  { servo_aktiv_alt = servo_aktiv;
+    if (servo_aktiv == 1)
+    { TFT_line_print(0, "MANUAL MODE DOSING");
+      TFT_line_blink(0, true);
+      TFT_line_color(5, TFT_GREEN, TFT_DARKGREY);
+
+    }
+    else 
+    { TFT_line_print(0, "MANUAL MODE PAUSED");
+      TFT_line_blink(0, false);
+      TFT_line_color(5, TFT_LIGHTGREY, TFT_DARKGREY);
+    }
   }
 
-  pos = getRotariesValue(SW_WINKEL);
-  gewicht = SCALE_GETUNITS(SCALE_READS) - tara;
-  if ((digitalRead(button_start_pin)) == HIGH) {
-    servo_aktiv = 1;
-  }
-  if ((digitalRead(button_stop_pin)) == HIGH) {
-    servo_aktiv = 0;
-  }
-  if ((digitalRead(EncoderButton)) == LOW) {
-      tara = SCALE_GETUNITS(SCALE_READS);
-  }
-  if (servo_aktiv == 1) {
-    winkel = ((winkel_max * pos) / 100);
-  }
-  else { 
-    winkel = winkel_min + offset_winkel;
-  }
+  if(deb_encoder_button)tara = round(LoadCell.getData());
+    
+  if(servo_aktiv == 1)winkel = ((winkel_max * pos) / 100);
+  else winkel = winkel_min + offset_winkel;
   winkel = constrain(winkel, winkel_min + offset_winkel, winkel_max);
   SERVO_WRITE(winkel);
-  if (bINA219_installed && (current_servo > 0 || show_current == 1)) {
-    y_offset = 4;
-  }
-  #ifdef isDebug
-    #if isDebug >= 4
-      Serial.print("Handbetrieb:");  
-      Serial.print(" Gewicht ");     Serial.print(gewicht);
-      Serial.print(" Winkel ");      Serial.print(winkel);
-      Serial.print(" servo_aktiv "); Serial.println(servo_aktiv);
-    #endif
-  #endif
-//  gfx->setFont(Punk_Mono_Bold_600_375);
-  if (gewicht != gewicht_alt) {
-    gewicht_alt = gewicht;
+
+  if (gewicht != gewicht_alt) 
+  { gewicht_alt = gewicht;
     NewWeight = gewicht; // NewWeight is used by new graphics handling
   }
 
@@ -2705,7 +2689,6 @@ void processHandbetrieb(void)
     pos_alt = pos;
   }
 
-
   // tarra value & current value for servo, printed on one line
   if((tara != tara_alt) || (bINA219_installed && (current_mA != current_mA_alt) && (current_servo > 0 or show_current == 1)))
   { sprintf(ausgabe, "Tarra: %3dg", tara);
@@ -2714,12 +2697,6 @@ void processHandbetrieb(void)
     }
     TFT_line_print(4, ausgabe);
   }
-
-if (servo_aktiv != servo_aktiv_alt) 
-{ servo_aktiv_alt = servo_aktiv;
-  if (servo_aktiv == 1)TFT_line_print(0, "MANUAL MODE DOSING");
-  else TFT_line_print(0, "MANUAL MODE PAUSED");
-}
 
   if (alarm_overcurrent) {i = 1;}
   while (i > 0) {
@@ -2746,7 +2723,9 @@ hw_timer_t * timer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 void IRAM_ATTR onTimer() // is called every 10mS
-{ portENTER_CRITICAL_ISR(&timerMux);
+{ int x;
+  
+  portENTER_CRITICAL_ISR(&timerMux);
   interruptCounter++;
 
   // timer example
@@ -2771,8 +2750,15 @@ void IRAM_ATTR onTimer() // is called every 10mS
   if((interruptCounter % 100)==0) // each second
   { 
   }
+    
+  portEXIT_CRITICAL_ISR(&timerMux);
+}
 
- portEXIT_CRITICAL_ISR(&timerMux);
+//interrupt routine:
+void dataReadyISR() {
+  if (LoadCell.update()) {
+    newDataReady = 1;
+  }
 }
 
 void setup() 
@@ -2797,10 +2783,20 @@ void setup()
 
   Serial.println("Pin Config");
   // enable internal pull downs for digital inputs 
-  pinMode(button_start_pin, INPUT_PULLDOWN);
-  pinMode(button_stop_pin, INPUT_PULLDOWN);
-  pinMode(switch_betrieb_pin, INPUT_PULLDOWN);
-  pinMode(switch_setup_pin, INPUT_PULLDOWN);
+  pinMode(BUTTON_START,INPUT_PULLDOWN);
+  pinMode(BUTTON_STOP, INPUT_PULLDOWN);
+  pinMode(SWITCH_AUTO, INPUT_PULLDOWN);
+  pinMode(SWITCH_SETUP, INPUT_PULLDOWN);
+
+  xTaskCreatePinnedToCore(
+                    ReadButtons,    // Task to read and debounce buttons and switch 
+                    "ReadButtons", // name of task
+                    2000,           // Stack size of task 
+                    NULL,           // parameter of the task 
+                    1,              // priority of the task 
+                    NULL,           // Task handle to keep track of created task 
+                    0);             // pin task to core 0 
+
   
   // Check if we have a INA219 current sensor installed or not
   if (ina219.begin()) {
@@ -2818,11 +2814,11 @@ void setup()
   delay(2000);
 
   // Rotary
-  pinMode(EncoderButton, INPUT_PULLUP);
-  attachInterrupt(EncoderButton, isr1, FALLING);
-  pinMode(EncoderA,INPUT);
-  pinMode(EncoderB,INPUT);
-  attachInterrupt(EncoderA, isr2, CHANGE);
+  pinMode(ENCODER_BUTTON, INPUT_PULLUP);
+  attachInterrupt(ENCODER_BUTTON, isr1, FALLING);
+  pinMode(ROTARY_ENCODER_A,INPUT);
+  pinMode(ROTARY_ENCODER_B,INPUT);
+  attachInterrupt(ROTARY_ENCODER_A, isr2, CHANGE);
   // Buzzer
   pinMode(buzzer_pin, OUTPUT);
   pinMode(led_pin, OUTPUT);
@@ -2830,26 +2826,23 @@ void setup()
   delay (100);
   // Preferences aus dem EEPROM lesen
   getPreferences();
-  // Servo initialisieren und schliessen
-  #ifdef SERVO_ERWEITERT
-    servo.attach(servo_pin,  750, 2500); // erweiterte Initialisierung, steuert nicht jeden Servo an
-    servo.setPeriodHertz(100);
-  #else
-    servo.attach(servo_pin, 1000, 2000); // default Werte. Achtung, steuert den Nullpunkt weniger weit aus!  
-  #endif
-  SERVO_WRITE(winkel_min);
-  // Waage erkennen - machen wir vor dem Boot-Screen, dann hat sie 3 Sekunden Zeit zum aufwärmen
-  scale.begin(hx711_dt_pin, hx711_sck_pin);
-  if (scale.wait_ready_timeout(1000)) {               // Waage angeschlossen? :Roli - Ist immer null wenn kein HX711 angeschlossen ist
-    scale.power_up();
-    if (scale.read() != 0) {                          // Roli - Wenn 0, nehme ich an, das kein HX711 angeschlossen ist
-      waage_vorhanden = 1;
-      TFT_line_print(1, "Scale Found!");
-      TFT_line_color(1, TFT_BLACK, TFT_GREEN);
-    }
-  }
+
+  // servo setup initialisation
+  servo.attach(SERVO_PIN,  500, 2500); // pulse range for 180 degrees range
+//    servo.setPeriodHertz(50);
+  SERVO_WRITE(winkel_min); // set valve to closed position
+
   buzzer(BUZZER_SHORT);
   delay(2000);
+
+  // new HX711 library used
+  LoadCell.begin();
+  LoadCell.start(2000, false);
+  calibrationValue = faktor;
+  LoadCell.setCalFactor(calibrationValue); 
+  attachInterrupt(digitalPinToInterrupt(HX711_dout), dataReadyISR, FALLING);
+
+  waage_vorhanden = 1; // have check really
 
   // Setup der Waage, Skalierungsfaktor setzen
   if (waage_vorhanden ==1) {                         // Waage angeschlossen?
@@ -2860,8 +2853,11 @@ void setup()
       buzzer(BUZZER_ERROR);
     }
     else {                                          // Tara und Skalierung setzen
-      scale.set_scale(faktor);
-      scale.set_offset(long(gewicht_leer));
+      // scale.set_scale(faktor);
+      LoadCell.setCalFactor(calibrationValue); 
+      // scale.set_offset(long(gewicht_leer));
+      LoadCell.setTareOffset((long)(gewicht_leer));	
+
       TFT_line_print(1, "Scale Initialized!");
       TFT_line_color(1, TFT_BLACK, TFT_GREEN);
     }
@@ -2879,12 +2875,12 @@ void setup()
   // initiale Kalibrierung des Leergewichts wegen Temperaturschwankungen
   // Falls mehr als 20g Abweichung steht vermutlich etwas auf der Waage.
   if (waage_vorhanden == 1) {
-    gewicht = SCALE_GETUNITS(SCALE_READS);
+    gewicht = round(LoadCell.getData());
     if ((gewicht > -20) && (gewicht < 20)) 
     {
-      scale.tare(10);
+      LoadCell.tare();
       buzzer(BUZZER_SUCCESS);
-      #ifdef isDebug
+      #ifdef isDebugSCALE_GETUNITS
         Serial.print("Tara angepasst um: ");
         Serial.println(gewicht);
       #endif
@@ -2893,15 +2889,20 @@ void setup()
       TFT_line_color(1, TFT_BLACK, TFT_RED);
       TFT_line_print(1, "Please Empty Scale"); 
       TFT_line_blink(1, true);
-      #ifdef isDebug
+//      #ifdef isDebug
         Serial.print("Gewicht auf der Waage: ");
         Serial.println(gewicht);
-      #endif
+        Serial.print("Faktor: ");
+        Serial.println(faktor);
+        Serial.print("Gewicht Leer: ");
+        Serial.println(gewicht_leer);
+        
+//      #endif
       delay(5000);
       // Neuer Versuch, falls Gewicht entfernt wurde
-      gewicht = SCALE_GETUNITS(SCALE_READS);
+      gewicht = round(LoadCell.getData());
       if ((gewicht > -20) && (gewicht < 20)) {
-        scale.tare(10);
+        LoadCell.tare();
         buzzer(BUZZER_SUCCESS);
         #ifdef isDebug
           Serial.print("Tara angepasst um: ");
@@ -2916,9 +2917,9 @@ void setup()
  
   delay(2000);
   TFT_line_print(1, ""); // remove warnings 
-  TFT_line_print(5, ""); // remove credits
+//  TFT_line_print(5, ""); // remove credits
   delay(2000);
-  tft.fillScreen(TFT_BLACK);
+//  tft.fillScreen(TFT_BLACK);
   delay(2000);
   
 //  tft_colors();
@@ -2941,36 +2942,33 @@ void setup()
 }
 
 void loop() 
-{ static int count;
-  Serial.println(count);
-  count++;
-  delay(100);
-  
-  //INA219 Messung
+{ //INA219 Messung
   if (bINA219_installed and inawatchdog == 1 and (current_servo > 0 or show_current == 1) and (modus == MODE_HANDBETRIEB or modus == MODE_AUTOMATIK)) {
     ina219_measurement();
   }
   // Setup Menu 
-  if ((digitalRead(switch_setup_pin)) == HIGH) {
-//    NewHaniDisplayMode = HANI_SETUP;
+  if(deb_setup_switch) 
+  { if (modus != MODE_SETUP)
+    { ActLcdMode = 999; // force new display build
+      SelectMenu(HANI_SETUP);
+    }  
     processSetup();
   }
   // Automatik-Betrieb 
-  else if ((digitalRead(switch_betrieb_pin)) == HIGH) {
-//    NewHaniDisplayMode = HANI_AUTO;
+  else if(deb_auto_switch) {
+    if (modus != MODE_AUTOMATIK)
+    { ActLcdMode = 999; // force new display build
+      SelectMenu(HANI_AUTO);
+    }
     processAutomatik();
   }
   // Handbetrieb 
-  else if ((digitalRead(switch_betrieb_pin) == LOW) && (digitalRead(switch_setup_pin) == LOW)) {
-    if (modus != MODE_HANDBETRIEB)
+  else if(deb_manual_switch) 
+  { if (modus != MODE_HANDBETRIEB)
     { ActLcdMode = 999; // force new display build
-      NewHaniDisplayMode = HANI_HAND; // only once
+      SelectMenu(HANI_HAND);
     }
     processHandbetrieb();
-  }
-  else
-  { 
-    NewHaniDisplayMode = HANI_LOGO;
   }
 }
 

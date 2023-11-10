@@ -14,7 +14,8 @@ TFT_eSPI tft = TFT_eSPI(240,320);
 bool bScrollNow = false;
 bool bUpdateDisplay = false;
 bool bBlinkDisplay = false;
-int BlinkTimer10mS = 0;
+int  BlinkTimer10mS = 0;
+int  ActLcdMode = 999; 
 
 bool bPrintWeight = false;
 int  NewWeight = 0;
@@ -38,6 +39,13 @@ void UpdateLCD(void);
 
 
 #include "dial3.h"
+
+void SelectMenu(int menu)
+{ NewHaniDisplayMode = menu; // only once
+  // wait until this menu is actually initialized by interrupt driven code
+  while(NewHaniDisplayMode != ActLcdMode)delay(10);
+  delay(100);
+}
 
 void UseFont(const uint8_t* usethisfont)
 { static const uint8_t* activefont = (uint8_t*)-1;
@@ -72,14 +80,12 @@ void plotNeedle(int16_t angle, uint16_t ms_delay);
 #define NEEDLE_RADIUS 53  // Radius at tip
 #define NEEDLE_COLOR1 TFT_BLACK  // Needle periphery colour
 
-int ShowVolume10mS = 0;
-int Show45RPM10mS = 0;
-int ShowRadio10mS = 0;
-int ShowArt10mS = 0;
-int Actual45RPMShown = 999;
-int ActualRadioShown = 999;
-int ActualArtShown = 999;
-int ActLcdMode = 999; 
+//int ShowRadio10mS = 0;
+//int ShowArt10mS = 0;
+//int Actual45RPMShown = 999;
+//int ActualRadioShown = 999;
+//int ActualArtShown = 999;
+
 
 void BuildGdxTable(void);
 
@@ -348,14 +354,14 @@ void UpdateLCD(void)
 
   // first print static content on LCD 
   if (NewHaniDisplayMode != ActLcdMode)
-  { ActLcdMode = NewHaniDisplayMode;
-Serial.println(NewHaniDisplayMode);
-    // good riddance
+  { Serial.println(NewHaniDisplayMode);
     for (line = 0; line < TFTNUMOFLINES; line++)
     { TFT_line_print(line, "");
       MyDisplay[line].rounded = (line>0);  
+      MyDisplay[line].refresh = true;  
+      MyDisplay[line].lastpixelwidth = -1;  
     }
-    switch (ActLcdMode) // on this mode change, fill the text lines with appropriate data
+    switch (NewHaniDisplayMode) // on this mode change, fill the text lines with appropriate data
     { case HANI_LOGO:
         for (line = 0; line < TFTNUMOFLINES; line++)
         { MyDisplay[line].backgroundcolor = TFT_DARKGREY;
@@ -370,26 +376,26 @@ Serial.println(NewHaniDisplayMode);
         for (line = 0; line < TFTNUMOFLINES; line++)
         { MyDisplay[line].backgroundcolor = TFT_DARKGREY;
           MyDisplay[line].textcolor = TFT_WHITE;  
-          MyDisplay[line].canvascolor = TFT_RED;  
+          MyDisplay[line].canvascolor = TFT_BLACK;  
         }
-        CanvasColor = TFT_RED; 
+        CanvasColor = TFT_BLACK; 
         tft.fillScreen(CanvasColor);
-        TFT_line_print(0, "SETUP");
-        TFT_line_print(5, "Choose Parameter & Select It");
+        //TFT_line_print(0, "SETUP");
+        //TFT_line_print(5, "Choose Parameter & Select It");
         break;
       case HANI_AUTO:
         for (line = 0; line < TFTNUMOFLINES; line++)
         { MyDisplay[line].backgroundcolor = TFT_DARKGREY;
           MyDisplay[line].textcolor = TFT_WHITE;  
-          MyDisplay[line].canvascolor = TFT_GREEN;  
+          MyDisplay[line].canvascolor = TFT_BLACK;  
         }
 
-        CanvasColor = TFT_GREEN; 
+        CanvasColor = TFT_BLACK; 
         tft.fillScreen(CanvasColor);
         BackGroundColor = TFT_DARKGREY;
         TextColor = TFT_WHITE;
         TFT_line_print(0, "AUTOMATIC MODE");
-        TFT_line_print(5, "Choose Parameter & Select It");
+        //TFT_line_print(5, "Choose Parameter & Select It");
         break;
       case HANI_HAND:
         for (line = 0; line < TFTNUMOFLINES; line++)
@@ -418,6 +424,7 @@ Serial.println(NewHaniDisplayMode);
         break;        
     }
     refreshdisplay = true;
+    ActLcdMode = NewHaniDisplayMode; 
   }
 
   if (refreshdisplay == true)
@@ -495,8 +502,10 @@ Serial.println(NewHaniDisplayMode);
        }
      }  
      MyDisplay[line].refresh = false;
-     BlinkTimer10mS = 0; // reset the blink timer so blinking starts elegant
-     bBlinkDisplay = 0;
+     if(MyDisplay[line].blink == true)
+     { BlinkTimer10mS = 0; // reset the blink timer so blinking starts elegant
+       bBlinkDisplay = 0;
+     }  
    }
    else if(MyDisplay[line].blink == true)  
    { if(BlinkTimer10mS) 

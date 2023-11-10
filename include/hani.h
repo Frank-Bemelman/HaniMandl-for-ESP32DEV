@@ -24,3 +24,20 @@ struct TFTline
   int  lastpixelwidth;
   bool rounded; // background box rounded or not
 };
+
+
+#define SWITCH_SETUP 4 
+#define SWITCH_AUTO 15
+#define BUTTON_START 12 
+#define BUTTON_STOP 27 
+
+
+#define ROTARY_ENCODER_A 33
+#define ROTARY_ENCODER_B 26
+#define ENCODER_BUTTON 32
+//#define ROTARY_ENCODER_BUTTON_PIN 16
+//#define ROTARY_ENCODER_VCC_PIN -1
+//#define ROTARY_ENCODER_STEPS 2
+
+#define SERVO_PIN 2
+

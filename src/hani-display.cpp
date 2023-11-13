@@ -14,6 +14,7 @@ TFT_eSPI tft = TFT_eSPI(240,320);
 bool bScrollNow = false;
 bool bUpdateDisplay = false;
 bool bBlinkDisplay = false;
+bool bBlinkOld = false;
 int  BlinkTimer10mS = 0;
 int  ActLcdMode = 999; 
 
@@ -394,8 +395,7 @@ void UpdateLCD(void)
         tft.fillScreen(CanvasColor);
         BackGroundColor = TFT_DARKGREY;
         TextColor = TFT_WHITE;
-        TFT_line_print(0, "AUTOMATIC MODE");
-        //TFT_line_print(5, "Choose Parameter & Select It");
+        TFT_line_print(0, "AUTOMATIC PAUSED");
         break;
       case HANI_HAND:
         for (line = 0; line < TFTNUMOFLINES; line++)
@@ -408,7 +408,7 @@ void UpdateLCD(void)
         tft.fillScreen(CanvasColor);
         BackGroundColor = TFT_DARKGREY;
         TextColor = TFT_WHITE;
-        TFT_line_print(0, "MANUAL MODE");
+        TFT_line_print(0, "MANUAL MODE PAUSED");
         TFT_line_print(3, "gram");
         TFT_line_color(3, TFT_YELLOW, TFT_BLACK);
         TFT_line_color(1, TFT_YELLOW, TFT_BLACK); // Big Weight number
@@ -505,11 +505,15 @@ void UpdateLCD(void)
      if(MyDisplay[line].blink == true)
      { BlinkTimer10mS = 0; // reset the blink timer so blinking starts elegant
        bBlinkDisplay = 0;
+       MyDisplay[line].blinkold = !bBlinkDisplay; 
      }  
    }
    else if(MyDisplay[line].blink == true)  
-   { if(BlinkTimer10mS) 
-     { tft.setTextDatum(TC_DATUM); // horizontally centered for text that is not scrolling
+   { // Serial.print("line="); Serial.println(line);
+     if(MyDisplay[line].blinkold != bBlinkDisplay)
+     { MyDisplay[line].blinkold = bBlinkDisplay;
+       // Serial.print("BlinkTimer10mS="); Serial.println(BlinkTimer10mS);
+       tft.setTextDatum(TC_DATUM); // horizontally centered for text that is not scrolling
        tw = MyDisplay[line].pixelwidth;
        if (tw > (320-40))tw = (320-40);
        tft.setViewport(0, (line * 40), 320, 40, true);

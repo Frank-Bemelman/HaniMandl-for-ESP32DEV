@@ -5,7 +5,6 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-//#include <HX711.h>                  /* aus dem Bibliotheksverwalter */
 #include <ESP32Servo.h>             /* aus dem Bibliotheksverwalter */
 #include <Adafruit_INA219.h>        /* aus dem Bibliotheksverwalter */
 #include <Preferences.h>            /* aus dem BSP von expressif, wird verfügbar wenn das richtige Board ausgewählt ist */
@@ -15,7 +14,6 @@
 
 #include "hani.h"
 #include "Arialbd72.h"
-//#include "HX711.h"
 #include <HX711_ADC.h>
 
 // Version
@@ -60,13 +58,13 @@ HX711_ADC LoadCell(HX711_dout, HX711_sck);
 float calibrationValue;
 volatile boolean newDataReady;
 
+extern void processAutomatik2(void);
+
 //
 // Hier den Code auf die verwendete Hardware einstellen
 //
 
 #define ROTARY_SCALE 2         // number of steps for each click of your rotary encoder used
-//#define SERVO_REVERSED       // Servo invertieren, falls der Quetschhahn von links geöffnet wird. Mindestens ein Exemplar bekannt
-//
 // Ende Benutzereinstellungen!
 // 
 
@@ -79,25 +77,6 @@ volatile boolean newDataReady;
                                 // ACHTUNG: zu viel Serieller Output kann einen ISR-Watchdog Reset auslösen!
 
 #define MAXIMALGEWICHT 4500     // maximum allowed weight in gram - 1500 for 2kg loadcell - 4500 for 5kg loadcell
-
-// Ansteuerung Servo
-#ifdef SERVO_REVERSED
-  #define SERVO_WRITE(n)     servo.write(180-n)
-#else
-  #define SERVO_WRITE(n)     servo.write(n)
-#endif
-
-
-// operation mode as set by 3 way switch
-#define MODE_SETUP       0
-#define MODE_AUTOMATIK   1
-#define MODE_HANDBETRIEB 2
-
-// Buzzer Sounds
-#define BUZZER_SHORT   1
-#define BUZZER_LONG    2
-#define BUZZER_SUCCESS 3
-#define BUZZER_ERROR   4
 
 // INA 219
 Adafruit_INA219 ina219;
@@ -146,29 +125,17 @@ struct rotary {
   int Maximum;
   int Step;
 };
-#define SW_WINKEL    0
-#define SW_KORREKTUR 1
-#define SW_MENU      2
+
 struct rotary rotaries[3]; // will be initialized in setup()
 int rotary_select = SW_WINKEL;
 
-// Füllmengen für 5 verschiedene Gläser
-struct glas { 
-  int Gewicht;
-  int GlasTyp;
-  int Tara;
-  int TripCount;
-  int Count;
-};
-
-const char *GlasTypArray[3] = {"DIB", "TOF", "DEE"};
-struct glas glaeser[5] = { 
-                            {125, 0, -9999, 0, 0},
-                            {250, 1, -9999, 0, 0},
-                            {250, 2, -9999, 0, 0},
-                            {500, 1, -9999, 0, 0},
-                            {500, 0, -9999, 0, 0} 
-                          };
+JarName JarNames[4] = {{"DE Imker Bund","DIB"},{"TwistOff","TOF"},{"DeepTwist","DEE"},{"Special Jar","SPX"}}; // name and shortname
+JarParameter Jars[5] = {{125, 0, -9999, 0, 0}, // weight, name, tarra, tripcount, counter
+                        {250, 1, -9999, 0, 0},
+                        {250, 2, -9999, 0, 0},
+                        {500, 1, -9999, 0, 0},
+                        {500, 0, -9999, 0, 0}};
+ 
 
 // Allgemeine Variablen
 int i;                              // allgemeine Zählvariable
@@ -405,7 +372,7 @@ void getPreferences(void) {
   current_servo   = preferences.getUInt("current_servo", current_servo);
   show_current    = preferences.getUInt("show_current", show_current);
   color_scheme    = preferences.getUInt("color_scheme", color_scheme);
-  color_marker_idx    = preferences.getUInt("color_marker_idx", color_marker_idx);
+  color_marker_idx    = preferences.getUInt("clr_marker_idx", color_marker_idx);
   preferences_chksum = faktor + pos + gewicht_leer + korrektur + autostart + autokorrektur + kulanz_gr + fmenge_index +
                        winkel_min + winkel_max + winkel_fein + buzzermode + ledmode + showlogo + showcredits + 
                        kali_gewicht + current_servo + glastoleranz + show_current + color_scheme + color_marker_idx;
@@ -414,20 +381,20 @@ void getPreferences(void) {
   int ResetGlasTyp[] = {0,1,2,1,0,};
   while( i < 5) {
     sprintf(ausgabe, "Gewicht%d", i);
-    glaeser[i].Gewicht = preferences.getInt(ausgabe, ResetGewichte[i]);
-    preferences_chksum += glaeser[i].Gewicht;
+    Jars[i].Gewicht = preferences.getInt(ausgabe, ResetGewichte[i]);
+    preferences_chksum += Jars[i].Gewicht;
     sprintf(ausgabe, "GlasTyp%d", i);
-    glaeser[i].GlasTyp = preferences.getInt(ausgabe, ResetGlasTyp[i]);
-    preferences_chksum += glaeser[i].GlasTyp;
+    Jars[i].GlasTyp = preferences.getInt(ausgabe, ResetGlasTyp[i]);
+    preferences_chksum += Jars[i].GlasTyp;
     sprintf(ausgabe, "Tara%d", i);
-    glaeser[i].Tara= preferences.getInt(ausgabe, -9999);
-    preferences_chksum += glaeser[i].Tara;
+    Jars[i].Tara= preferences.getInt(ausgabe, -9999);
+    preferences_chksum += Jars[i].Tara;
     sprintf(ausgabe, "TripCount%d", i);
-    glaeser[i].TripCount = preferences.getInt(ausgabe, 0);
-    preferences_chksum += glaeser[i].TripCount;
+    Jars[i].TripCount = preferences.getInt(ausgabe, 0);
+    preferences_chksum += Jars[i].TripCount;
     sprintf(ausgabe, "Count%d", i);
-    glaeser[i].Count = preferences.getInt(ausgabe, 0);
-    preferences_chksum += glaeser[i].Count;
+    Jars[i].Count = preferences.getInt(ausgabe, 0);
+    preferences_chksum += Jars[i].Count;
     i++;
   }
   preferences.end();
@@ -458,13 +425,13 @@ void getPreferences(void) {
     while( i < 5 ) {
       sprintf(ausgabe, "Gewicht%d = ", i);
       Serial.print(ausgabe);         
-      Serial.println(glaeser[i].Gewicht);
+      Serial.println(Jars[i].Gewicht);
       sprintf(ausgabe, "GlasTyp%d = ", i);
       Serial.print(ausgabe);         
-      Serial.println(GlasTypArray[glaeser[i].GlasTyp]);
+      Serial.println(JarNames[Jars[i].GlasTyp].shortname);
       sprintf(ausgabe, "Tara%d = ", i);
       Serial.print(ausgabe);         
-      Serial.println(glaeser[i].Tara);
+      Serial.println(Jars[i].Tara);
       i++;
     }
     Serial.print("Checksumme:");    
@@ -488,20 +455,20 @@ void setPreferences(void) {
   // Counter separat behandeln, ändert sich häufig
   for ( i=0 ; i < 5; i++ ) {
     sprintf(ausgabe, "TripCount%d", i);
-    if (glaeser[i].TripCount != preferences.getInt(ausgabe, 0)) {
-      preferences.putInt(ausgabe, glaeser[i].TripCount);
+    if (Jars[i].TripCount != preferences.getInt(ausgabe, 0)) {
+      preferences.putInt(ausgabe, Jars[i].TripCount);
     }
     sprintf(ausgabe, "Count%d", i);
-    if (glaeser[i].Count != preferences.getInt(ausgabe, 0)) {
-      preferences.putInt(ausgabe, glaeser[i].Count);
+    if (Jars[i].Count != preferences.getInt(ausgabe, 0)) {
+      preferences.putInt(ausgabe, Jars[i].Count);
     }
     #ifdef isDebug
       Serial.print("Counter gespeichert: Index ");
       Serial.print(i);
       Serial.print(" Trip ");
-      Serial.print(glaeser[fmenge_index].TripCount);
+      Serial.print(Jars[fmenge_index].TripCount);
       Serial.print(" Gesamt ");
-      Serial.println(glaeser[fmenge_index].Count);      
+      Serial.println(Jars[fmenge_index].Count);      
     #endif
   }
   // Den Rest machen wir gesammelt, das ist eher statisch
@@ -511,9 +478,9 @@ void setPreferences(void) {
                           glastoleranz + show_current + color_scheme + color_marker_idx;
   i = 0;
   while( i < 5 ) {
-    preferences_newchksum += glaeser[i].Gewicht;
-    preferences_newchksum += glaeser[i].GlasTyp;
-    preferences_newchksum += glaeser[i].Tara;
+    preferences_newchksum += Jars[i].Gewicht;
+    preferences_newchksum += Jars[i].GlasTyp;
+    preferences_newchksum += Jars[i].Tara;
     i++;
   }
   if( preferences_newchksum == preferences_chksum ) {
@@ -542,15 +509,15 @@ void setPreferences(void) {
   preferences.putUInt("current_servo", current_servo);
   preferences.putUInt("show_current", show_current);
   preferences.putUInt("color_scheme", color_scheme);
-  preferences.putUInt("color_marker_idx", color_marker_idx);
+  preferences.putUInt("clr_marker_idx", color_marker_idx);
   i = 0;
   while( i < 5 ) {
     sprintf(ausgabe, "Gewicht%d", i);
-    preferences.putInt(ausgabe, glaeser[i].Gewicht);
+    preferences.putInt(ausgabe, Jars[i].Gewicht);
     sprintf(ausgabe, "GlasTyp%d", i);
-    preferences.putInt(ausgabe, glaeser[i].GlasTyp);  
+    preferences.putInt(ausgabe, Jars[i].GlasTyp);  
     sprintf(ausgabe, "Tara%d", i);
-    preferences.putInt(ausgabe, glaeser[i].Tara);
+    preferences.putInt(ausgabe, Jars[i].Tara);
     i++;
   }
   preferences.end();
@@ -580,11 +547,11 @@ void setPreferences(void) {
     i = 0;
     while( i < 5 ) {
       sprintf(ausgabe, "Gewicht%d = ", i);
-      Serial.print(ausgabe);         Serial.println(glaeser[i].Gewicht);
+      Serial.print(ausgabe);         Serial.println(Jars[i].Gewicht);
       sprintf(ausgabe, "GlasTyp%d = ", i);
-      Serial.print(ausgabe);         Serial.println(GlasTypArray[glaeser[i].GlasTyp]);
+      Serial.print(ausgabe);         Serial.println(JarNames[Jars[i].GlasTyp].shortname);
       sprintf(ausgabe, "Tara%d = ", i);
-      Serial.print(ausgabe);         Serial.println(glaeser[i].Tara);
+      Serial.print(ausgabe);         Serial.println(Jars[i].Tara);
       i++;
     }
   #endif
@@ -611,10 +578,10 @@ void setupTripCounter(void) {
     }
     for(int j=0;j<5;j++) {
       gfx->setCursor(5, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%4dg %3s", glaeser[j].Gewicht,GlasTypArray[glaeser[j].GlasTyp]);
+      sprintf(ausgabe, "%4dg %3s", Jars[j].Gewicht, JarNames[Jars[j].GlasTyp].shortname);
       gfx->print(ausgabe);
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%11d St.", glaeser[j].TripCount);
+      sprintf(ausgabe, "%11d St.", Jars[j].TripCount);
       gfx->print(ausgabe);
     }
     if (EncoderButtonTapped()) {
@@ -632,10 +599,10 @@ void setupTripCounter(void) {
     }
     for(int j=0;j<5;j++) {
       gfx->setCursor(5, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%4dg %3s", glaeser[j].Gewicht,GlasTypArray[glaeser[j].GlasTyp]);
+      sprintf(ausgabe, "%4dg %3s", Jars[j].Gewicht,JarNames[Jars[j].GlasTyp].shortname);
       gfx->print(ausgabe);
       gfx->setCursor(150, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%10.3fkg", glaeser[j].Gewicht * glaeser[j].TripCount / 1000.0);
+      sprintf(ausgabe, "%10.3fkg", Jars[j].Gewicht * Jars[j].TripCount / 1000.0);
       gfx->print(ausgabe);
     }
     if (EncoderButtonTapped()) {
@@ -653,7 +620,7 @@ void setupTripCounter(void) {
       return;
     }
     for(int j=0;j<5;j++) {
-      TripAbfuellgewicht += glaeser[j].Gewicht * glaeser[j].TripCount / 1000.0;
+      TripAbfuellgewicht += Jars[j].Gewicht * Jars[j].TripCount / 1000.0;
     }
     gfx->setFont(Punk_Mono_Bold_600_375);
     sprintf(ausgabe, "Summe");
@@ -697,7 +664,7 @@ void setupTripCounter(void) {
         gfx->setCursor(283, 30+((pos+1) * y_offset_tft));
         gfx->print("OK");
         if ( pos == 0) {
-          for(int j=0;j<5;j++)glaeser[j].TripCount = 0;
+          for(int j=0;j<5;j++)Jars[j].TripCount = 0;
           setPreferences();
         }
         delay(1000);
@@ -729,10 +696,10 @@ void setupCounter(void) {
     }
     for(int j=0;j<5;j++) {
       gfx->setCursor(5, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%4dg %3s", glaeser[j].Gewicht,GlasTypArray[glaeser[j].GlasTyp]);
+      sprintf(ausgabe, "%4dg %3s", Jars[j].Gewicht,JarNames[Jars[j].GlasTyp].shortname);
       gfx->print(ausgabe);
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%11d St.", glaeser[j].Count);
+      sprintf(ausgabe, "%11d St.", Jars[j].Count);
       gfx->print(ausgabe);
     }
     if (EncoderButtonTapped()) {
@@ -750,10 +717,10 @@ void setupCounter(void) {
     }
     for(int j=0;j<5;j++) {
       gfx->setCursor(5, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%4dg %3s", glaeser[j].Gewicht,GlasTypArray[glaeser[j].GlasTyp]);
+      sprintf(ausgabe, "%4dg %3s", Jars[j].Gewicht,JarNames[Jars[j].GlasTyp].shortname);
       gfx->print(ausgabe);
       gfx->setCursor(150, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%10.3fkg", glaeser[j].Gewicht * glaeser[j].Count / 1000.0);
+      sprintf(ausgabe, "%10.3fkg", Jars[j].Gewicht * Jars[j].Count / 1000.0);
       gfx->print(ausgabe);
     }
     if (EncoderButtonTapped()) {
@@ -770,7 +737,7 @@ void setupCounter(void) {
       modus = -1;
       return;
     }
-    for(int j=0;j<5;j++)Abfuellgewicht += glaeser[j].Gewicht * glaeser[j].Count / 1000.0;
+    for(int j=0;j<5;j++)Abfuellgewicht += Jars[j].Gewicht * Jars[j].Count / 1000.0;
     gfx->setFont(Punk_Mono_Bold_600_375);
     sprintf(ausgabe, "Summe");
     x_pos = CenterPosX(ausgabe, 36, 320);
@@ -813,8 +780,8 @@ void setupCounter(void) {
         gfx->print("OK");
         if ( pos == 0) {
           for(int j=0;j<5;j++) {
-            glaeser[j].Count = 0;
-            glaeser[j].TripCount = 0;
+            Jars[j].Count = 0;
+            Jars[j].TripCount = 0;
           }
           setPreferences();
         }
@@ -844,7 +811,7 @@ void setupTara(void) {
     else if (EncoderButtonPressed()) {
       tara = round(LoadCell.getData());
       if (tara > 20) {                  // Gläser müssen mindestens 20g haben
-         glaeser[getRotariesValue(SW_MENU)].Tara = tara;
+         Jars[getRotariesValue(SW_MENU)].Tara = tara;
       }
       change = true;
       i++;
@@ -866,16 +833,16 @@ void setupTara(void) {
         gfx->setTextColor(COLOR_TEXT);
       }
       gfx->setCursor(5, 60+(j*30));
-      if (glaeser[j].Gewicht < 1000) {
-        sprintf(ausgabe, " %3dg - %3s", glaeser[j].Gewicht, GlasTypArray[glaeser[j].GlasTyp]); 
+      if (Jars[j].Gewicht < 1000) {
+        sprintf(ausgabe, " %3dg - %3s", Jars[j].Gewicht, JarNames[Jars[j].GlasTyp].shortname); 
       } 
       else {
-        sprintf(ausgabe, "%.1fkg - %3s", float(glaeser[j].Gewicht) / 1000, GlasTypArray[glaeser[j].GlasTyp]); 
+        sprintf(ausgabe, "%.1fkg - %3s", float(Jars[j].Gewicht) / 1000, JarNames[Jars[j].GlasTyp].shortname); 
       }
       gfx->println(ausgabe);
       gfx->setCursor(215, 60+(j*30));
-      if (glaeser[j].Tara > 0) { 
-        sprintf(ausgabe, "  %4dg", glaeser[j].Tara); 
+      if (Jars[j].Tara > 0) { 
+        sprintf(ausgabe, "  %4dg", Jars[j].Tara); 
         gfx->print(ausgabe);
       }
       else {
@@ -1337,97 +1304,65 @@ void setupFuellmenge(void) {
         gfx->setTextColor(COLOR_TEXT);
       }
       gfx->setCursor(10, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%4dg", glaeser[j].Gewicht);
+      sprintf(ausgabe, "%4dg", Jars[j].Gewicht);
       gfx->print(ausgabe);
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
-      if (GlasTypArray[glaeser[j].GlasTyp] == "DIB") {
-        gfx->print("DE Imker Bund");
-      }
-      else if (GlasTypArray[glaeser[j].GlasTyp] == "TOF") {
-        gfx->print("TwistOff");
-      }
-      else if (GlasTypArray[glaeser[j].GlasTyp] == "DEE") {
-        gfx->print("DeepTwist");
-      }
-      else if (GlasTypArray[glaeser[j].GlasTyp] == "SPZ") {
-        gfx->print("Spezial");
-      }
+
+      gfx->print(JarNames[Jars[j].GlasTyp].name);
     }
     if (EncoderButtonTapped()) { // Füllmenge gewählt
       i = 0;
     }
   }
   i = 1;
-  initRotaries(SW_MENU, weight2step(glaeser[pos].Gewicht) , 25, weight2step(MAXIMALGEWICHT), 1);
+  initRotaries(SW_MENU, weight2step(Jars[pos].Gewicht) , 25, weight2step(MAXIMALGEWICHT), 1);
   while (i > 0){
     if ((digitalRead(BUTTON_STOP)) == HIGH  or digitalRead(SWITCH_SETUP) == LOW) {
       modus = -1;
       return;
     }
-    glaeser[pos].Gewicht = step2weight(getRotariesValue(SW_MENU));
+    Jars[pos].Gewicht = step2weight(getRotariesValue(SW_MENU));
     for(int j=0; j < 5; j++) {
       gfx->setCursor(10, 30+((j+1) * y_offset_tft));
       if (j == pos) {
-        if (wert_old != String(glaeser[j].Gewicht)) {
+        if (wert_old != String(Jars[j].Gewicht)) {
           gfx->fillRect(0, 27+((j+1) * y_offset_tft)-19, 100, 27, COLOR_BACKGROUND);
-          wert_old = String(glaeser[j].Gewicht);
+          wert_old = String(Jars[j].Gewicht);
         }
         gfx->setTextColor(COLOR_MARKER);
       }
-      sprintf(ausgabe, "%4dg", glaeser[j].Gewicht);
+      sprintf(ausgabe, "%4dg", Jars[j].Gewicht);
       gfx->print(ausgabe);
       gfx->setTextColor(COLOR_TEXT);
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
-      if (GlasTypArray[glaeser[j].GlasTyp] == "DIB") {
-        gfx->print("DE Imker Bund");
-      }
-      else if (GlasTypArray[glaeser[j].GlasTyp] == "TOF") {
-        gfx->print("TwistOff");
-      }
-      else if (GlasTypArray[glaeser[j].GlasTyp] == "DEE") {
-        gfx->print("DeepTwist");
-      }
-      else if (GlasTypArray[glaeser[j].GlasTyp] == "SPZ") {
-        gfx->print("Spezial");
-      }
+      gfx->print(JarNames[Jars[j].GlasTyp].name);
     }
     if (EncoderButtonTapped()) { // Gewicht bestätigt
       i = 0;
     }
   }
   i = 1;
-  initRotaries(SW_MENU, glaeser[pos].GlasTyp, 0, sizeof(GlasTypArray)/sizeof(GlasTypArray[0]) - 1, 1);
+  initRotaries(SW_MENU, Jars[pos].GlasTyp, 0, sizeof(JarNames)/sizeof(JarNames[0]) - 1, 1);
   while (i > 0){ 
     if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
       while (digitalRead(BUTTON_STOP) == HIGH);
       modus = -1;
       return;
     }
-    glaeser[pos].GlasTyp = getRotariesValue(SW_MENU);
+    Jars[pos].GlasTyp = getRotariesValue(SW_MENU);
     for(int j=0;j<5;j++) {
       gfx->setCursor(10, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%4dg", glaeser[j].Gewicht);
+      sprintf(ausgabe, "%4dg", Jars[j].Gewicht);
       gfx->print(ausgabe);
       if (j == pos) {
-        if (wert_old != String(GlasTypArray[glaeser[j].GlasTyp])) {
+        if (wert_old != String(JarNames[Jars[j].GlasTyp].name)) {
           gfx->fillRect(100, 27+((j+1) * y_offset_tft)-19, 220, 27, COLOR_BACKGROUND);
-          wert_old = String(GlasTypArray[glaeser[j].GlasTyp]);
+          wert_old = String(JarNames[Jars[j].GlasTyp].name);
         }
         gfx->setTextColor(COLOR_MARKER);
       }
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
-      if (GlasTypArray[glaeser[j].GlasTyp] == "DIB") {
-        gfx->print("DE Imker Bund");
-      }
-      else if (GlasTypArray[glaeser[j].GlasTyp] == "TOF") {
-        gfx->print("TwistOff");
-      }
-      else if (GlasTypArray[glaeser[j].GlasTyp] == "DEE") {
-        gfx->print("DeepTwist");
-      }
-      else if (GlasTypArray[glaeser[j].GlasTyp] == "SPZ") {
-        gfx->print("Spezial");
-      }
+gfx->print(JarNames[Jars[j].GlasTyp].name);
       gfx->setTextColor(COLOR_TEXT);
     }
     if (EncoderButtonTapped()) { //GlasTyp bestätigt
@@ -1435,8 +1370,8 @@ void setupFuellmenge(void) {
       i = 0;
     }
   }
-  fmenge = glaeser[pos].Gewicht;
-  tara   = glaeser[pos].Tara;
+  fmenge = Jars[pos].Gewicht;
+  tara   = Jars[pos].Tara;
   fmenge_index = pos; 
   modus = -1;
   i = 0;
@@ -2154,7 +2089,7 @@ void processAutomatik(void) {
      rotary_select = SW_WINKEL;    // Einstellung für Winkel über Rotary
      offset_winkel = 0;            // Offset vom Winkel wird auf 0 gestellt
      initRotaries(SW_MENU, fmenge_index, 0, 4, 1);
-     gewicht_vorher = glaeser[fmenge_index].Gewicht + korrektur;
+     gewicht_vorher = Jars[fmenge_index].Gewicht + korrektur;
      int x_pos;
     if (current_servo > 0) {
       no_ina = true;
@@ -2245,39 +2180,43 @@ void processAutomatik(void) {
   }
   korrektur    = getRotariesValue(SW_KORREKTUR);
   fmenge_index = getRotariesValue(SW_MENU);
-  fmenge       = glaeser[fmenge_index].Gewicht;
-  tara         = glaeser[fmenge_index].Tara;
+  fmenge       = Jars[fmenge_index].Gewicht;
+  tara         = Jars[fmenge_index].Tara;
   if (tara <= 0) { 
     auto_aktiv = 0;
   }
   // wir starten nur, wenn das Tara für die Füllmenge gesetzt ist!
   // Ein erneuter Druck auf Start erzwingt die Aktivierung des Servo
-  if (digitalRead(BUTTON_START) == HIGH && tara > 0) {
-    while(digitalRead(BUTTON_START) == HIGH);
-    if (auto_aktiv == 1) {
+  if (deb_start_button && tara > 0) {
+    while(deb_start_button)delay(10); // wait until button released
+    if (auto_aktiv == 1) { 
+      TFT_line_print(0, "AUTOMATIC FILLING");
       erzwinge_servo_aktiv = 1;
       #ifdef isDebug
         Serial.println("erzwinge Servo aktiv");      
       #endif
     }
+    if(erzwinge_servo_aktiv)TFT_line_print(0, "AUTOMATIC FILLING");
+    else TFT_line_print(0, "AUTOMATIC WAITING");
     auto_aktiv    = 1;                            // automatisches Füllen aktivieren
     rotary_select = SW_WINKEL;                    // falls während der Parameter-Änderung auf Start gedrückt wurde    
     setPreferences();                             // falls Parameter über den Rotary verändert wurden
     glas_alt = -1;                              // Glas Typ Farbe zurücksetzen fals markiert ist
     korr_alt = -99999;                          // Korrektur Farbe zurücksetzen fals markiert ist
   }
-  if (digitalRead(BUTTON_STOP) == HIGH) {
+  if (deb_stop_button) {
     winkel      = winkel_min + offset_winkel;
     servo_aktiv = 0;
     auto_aktiv  = 0;
     tara_glas   = 0;
+    TFT_line_print(0, "AUT0MATIC PAUSED");
   }
 
   gewicht = round(LoadCell.getData()) - tara;
 
   // Glas entfernt -> Servo schliessen
-  if (gewicht < -20) {
-    winkel      = winkel_min + offset_winkel;
+  if (gewicht < -20) 
+  { winkel      = winkel_min + offset_winkel;
     servo_aktiv = 0;
     tara_glas   = 0;
     if (autostart != 1) {  // Autostart nicht aktiv
@@ -2307,7 +2246,7 @@ void processAutomatik(void) {
     gfx->setCursor(2, 176);
     gfx->fillRect(0, 156, 320, 27, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Thin_240_150);
-    sprintf(ausgabe, "%dg ", (glaeser[fmenge_index].Gewicht));
+    sprintf(ausgabe, "%dg ", (Jars[fmenge_index].Gewicht));
     gfx->print(ausgabe);
     gfx->setFont(Punk_Mono_Thin_120_075);
     gfx->setCursor(2 + 14*StringLenght(ausgabe), 168);
@@ -2369,8 +2308,8 @@ void processAutomatik(void) {
         sammler_num++;                                      // Korrekturwert für diesen Durchlauf erreicht
       }
       if (voll == true && gezaehlt == false) {
-        glaeser[fmenge_index].TripCount++;
-        glaeser[fmenge_index].Count++;
+        Jars[fmenge_index].TripCount++;
+        Jars[fmenge_index].Count++;
         gezaehlt = true;
       }
       #ifdef isDebug
@@ -2379,8 +2318,8 @@ void processAutomatik(void) {
         Serial.print(" gewicht_vorher: "); Serial.print(gewicht_vorher);
         Serial.print(" sammler_num: ");    Serial.print(sammler_num);
         Serial.print(" Korrektur: ");      Serial.println(autokorrektur_gr);
-        Serial.print(" Zähler Trip: ");    Serial.print(glaeser[fmenge_index].TripCount); //Kud
-        Serial.print(" Zähler: ");         Serial.println(glaeser[fmenge_index].Count); //Kud
+        Serial.print(" Zähler Trip: ");    Serial.print(Jars[fmenge_index].TripCount); //Kud
+        Serial.print(" Zähler: ");         Serial.println(Jars[fmenge_index].Count); //Kud
       #endif
     }
   }
@@ -2405,8 +2344,8 @@ void processAutomatik(void) {
     winkel      = winkel_min + offset_winkel;
     servo_aktiv = 0;
     if (gezaehlt == false) {
-      glaeser[fmenge_index].TripCount++;
-      glaeser[fmenge_index].Count++;
+      Jars[fmenge_index].TripCount++;
+      Jars[fmenge_index].Count++;
       gezaehlt = true;
     }
     if (autostart != 1)       // autostart ist nicht aktiv, kein weiterer Start
@@ -2490,14 +2429,14 @@ void processAutomatik(void) {
     gfx->print(ausgabe);
     autokorr_gr_alt = autokorrektur_gr;
   }
-  if ((glas_alt != fmenge_index and servo_aktiv == 0 and gewicht <= glaeser[fmenge_index].Gewicht - tara) or (glas_alt != fmenge_index and rotary_select_alt == SW_KORREKTUR)) {
+  if ((glas_alt != fmenge_index and servo_aktiv == 0 and gewicht <= Jars[fmenge_index].Gewicht - tara) or (glas_alt != fmenge_index and rotary_select_alt == SW_KORREKTUR)) {
     if (rotary_select == SW_MENU and servo_aktiv == 0) {
       gfx->setTextColor(COLOR_MARKER);
     }
     gfx->setCursor(2, 176);
     gfx->fillRect(0, 156, 320, 27, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Thin_240_150);
-    sprintf(ausgabe, "%dg ", (glaeser[fmenge_index].Gewicht));
+    sprintf(ausgabe, "%dg ", (Jars[fmenge_index].Gewicht));
     gfx->print(ausgabe);
     gfx->setFont(Punk_Mono_Thin_120_075);
     gfx->setCursor(2 + 14*StringLenght(ausgabe), 168);
@@ -2505,18 +2444,8 @@ void processAutomatik(void) {
     gfx->print(ausgabe);
     gfx->setFont(Punk_Mono_Thin_240_150);
     gfx->setCursor(110, 176);
-    if (GlasTypArray[glaeser[fmenge_index].GlasTyp] == "DIB") {
-      gfx->print("DE Imker Bund");
-    }
-    else if (GlasTypArray[glaeser[fmenge_index].GlasTyp] == "TOF") {
-      gfx->print("TwistOff");
-    }
-    else if (GlasTypArray[glaeser[fmenge_index].GlasTyp] == "DEE") {
-      gfx->print("DeepTwist");
-    }
-    else if (GlasTypArray[glaeser[fmenge_index].GlasTyp] == "SPZ") {
-      gfx->print("Spezial");
-    }
+    gfx->print(JarNames[Jars[fmenge_index].GlasTyp].name);
+
     gfx->setTextColor(COLOR_TEXT);
     glas_alt = fmenge_index;
   }
@@ -2582,13 +2511,13 @@ void processAutomatik(void) {
       gfx->print(ausgabe);
     }
     if (gewicht != gewicht_alt) {
-      progressbar = 318.0*((float)gewicht/(float)(glaeser[fmenge_index].Gewicht));
+      progressbar = 318.0*((float)gewicht/(float)(Jars[fmenge_index].Gewicht));
       progressbar = constrain(progressbar,0,318);
       gfx->drawRect(0, 137, 320, 15, COLOR_TEXT);
-      if (glaeser[fmenge_index].Gewicht > gewicht) {
+      if (Jars[fmenge_index].Gewicht > gewicht) {
         gfx->fillRect  (1, 138, progressbar, 13, RED);
       }
-      else if (gewicht >= glaeser[fmenge_index].Gewicht and gewicht <= glaeser[fmenge_index].Gewicht + kulanz_gr){
+      else if (gewicht >= Jars[fmenge_index].Gewicht and gewicht <= Jars[fmenge_index].Gewicht + kulanz_gr){
         gfx->fillRect  (1, 138, progressbar, 13, GREEN);
       }
       else {
@@ -2837,12 +2766,38 @@ void setup()
 
   // new HX711 library used
   LoadCell.begin();
-  LoadCell.start(2000, false);
+  LoadCell.start(3000, false);
+  
   calibrationValue = faktor;
   LoadCell.setCalFactor(calibrationValue); 
-  attachInterrupt(digitalPinToInterrupt(HX711_dout), dataReadyISR, FALLING);
+  
+  if(LoadCell.getTareTimeoutFlag())
+  { waage_vorhanden = 0; // have check really
+  }
+  else 
+  { waage_vorhanden = 1; // have check really
+  }
+  while (!LoadCell.update());
+  Serial.print("Calibration value: ");
+  Serial.println(LoadCell.getCalFactor());
+  Serial.print("HX711 measured conversion time ms: ");
+  Serial.println(LoadCell.getConversionTime());
+  Serial.print("HX711 measured sampling rate HZ: ");
+  Serial.println(LoadCell.getSPS());
+  Serial.print("HX711 measured settlingtime ms: ");
+  Serial.println(LoadCell.getSettlingTime());
+  Serial.println("Note that the settling time may increase significantly if you use delay() in your sketch!");
+  if (LoadCell.getSPS() < 7) {
+    Serial.println("!!Sampling rate is lower than specification, check MCU>HX711 wiring and pin designations");
+  }
+  else if (LoadCell.getSPS() > 100) {
+    Serial.println("!!Sampling rate is higher than specification, check MCU>HX711 wiring and pin designations");
+  }
 
-  waage_vorhanden = 1; // have check really
+
+
+
+  attachInterrupt(digitalPinToInterrupt(HX711_dout), dataReadyISR, FALLING);
 
   // Setup der Waage, Skalierungsfaktor setzen
   if (waage_vorhanden ==1) {                         // Waage angeschlossen?
@@ -2942,7 +2897,7 @@ void setup()
 }
 
 void loop() 
-{ //INA219 Messung
+{  //INA219 Messung
   if (bINA219_installed and inawatchdog == 1 and (current_servo > 0 or show_current == 1) and (modus == MODE_HANDBETRIEB or modus == MODE_AUTOMATIK)) {
     ina219_measurement();
   }
@@ -2956,11 +2911,12 @@ void loop()
   }
   // Automatik-Betrieb 
   else if(deb_auto_switch) {
-    if (modus != MODE_AUTOMATIK)
-    { ActLcdMode = 999; // force new display build
-      SelectMenu(HANI_AUTO);
-    }
-    processAutomatik();
+//    if (modus != MODE_AUTOMATIK)
+//    { ActLcdMode = 999; // force new display build
+//      SelectMenu(HANI_AUTO);
+//    }
+    processAutomatik2();
+    delay(10);
   }
   // Handbetrieb 
   else if(deb_manual_switch) 

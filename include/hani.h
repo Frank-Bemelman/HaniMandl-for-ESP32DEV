@@ -10,7 +10,7 @@
 #define MODE_SETUP       0
 #define MODE_AUTOMATIK   1
 #define MODE_HANDBETRIEB 2
-
+#define MODE_SETUPMENU   3
 
 
 // Buzzer Sounds
@@ -29,10 +29,27 @@
 
 
 
-#define HANI_LOGO 0
-#define HANI_SETUP 1
-#define HANI_AUTO 2
-#define HANI_HAND 3
+#define HANI_LOGO 0  // startup display
+#define HANI_SETUP 1 // setup menu
+#define HANI_AUTO 2  // automatic filling display
+#define HANI_HAND 3  // manual operation display
+#define HANI_MENU 4  // new style menu
+
+#define SETUP_STARTOFMENU 0
+#define SETUP_TARRA 0
+#define SETUP_CALIBRATE 1
+#define SETUP_NETWEIGHTS 2
+#define SETUP_AUTOS 3
+#define SETUP_SERVO 4
+#define SETUP_PARAMS 5
+#define SETUP_COUNTERS 6
+#define SETUP_BATCHES 7
+#define SETUP_INA219 8
+#define SETUP_RESET 9
+#define SETUP_LANGUAGE 10
+#define SETUP_ENDOFMENU 10 // adjust this as menu gets expanded
+
+
 
 
 struct TFTline
@@ -84,3 +101,22 @@ struct JarParameter {
 
 #define SERVO_PIN 2
 
+struct MenuLine
+{ char name[32];
+  int  min;
+  int  max;
+  int  value;
+  int  selected;
+};
+
+struct Menu
+{ char menuname[32];
+  char menuheader[64];
+  MenuLine line[6];
+  char bottomline[32];
+  int columns;
+}; 
+
+//struct Setup
+//{/ Menu MyMenu[];
+//}; 

@@ -15,6 +15,7 @@
 #include "hani.h"
 #include "Arialbd72.h"
 #include <HX711_ADC.h>
+#include "menustructure.h"
 
 // Version
 String version = "V1.0 by F.";
@@ -25,6 +26,7 @@ extern void TFT_line_blink(int line, bool blink);
 extern void SetupButtons(void);
 extern void ReadButtons(void * pvParameters);
 extern void SelectMenu(int menu);
+extern void Menu(void);  // big new menu handler
 
 extern bool bScrollNow;
 extern bool bUpdateDisplay;
@@ -49,6 +51,18 @@ extern int encoder_button_f;
 extern int setup_switch_f;
 extern int auto_switch_f;
 extern int manual_switch_f;
+
+extern int start_button_very_long_pressed;
+extern int stop_button_very_long_pressed;
+extern int encoder_button_very_long_pressed;
+extern int setup_switch_very_long_pressed;
+extern int auto_switch_very_long_pressed;
+extern int manual_switch_very_long_pressed;
+
+// setup menu 
+int LastMenu = 0;    // last menu used, for comfortable re-entry
+int CurrentMenu = 0; // 
+int EditMenu = 0; // 
 
 
 //HX711 constructor:
@@ -160,7 +174,7 @@ int winkel_fein = 35;               // konfigurierbar im Setup
 float fein_dosier_gewicht = 60;     // float wegen Berechnung des Schliesswinkels
 int servo_aktiv = 0;                // Servo aktivieren ja/nein
 int kali_gewicht = 500;             // frei wählbares Gewicht zum kalibrieren
-char ausgabe[30];                   // Fontsize 12 = 13 Zeichen maximal in einer Zeile
+char ausgabe[256];                  // FB: Increased lenght for use with long scrolling texts
 int modus = -1;                     // Bei Modus-Wechsel den Servo auf Minimum fahren
 int auto_aktiv = 0;                 // Für Automatikmodus - System ein/aus?
 int waage_vorhanden = 0;            // HX711 nicht ansprechen, wenn keine Waage angeschlossen ist, sonst Crash
@@ -186,7 +200,8 @@ int show_current = 0;               // 0 = aus, 1 = ein / Zeige den Strom an auc
 int inawatchdog = 1;                // 0 = aus, 1 = ein / wird benötigt um INA messung auszusetzen
 int offset_winkel = 0;              // Offset in Grad vom Schlieswinkel wen der Servo Überstrom hatte (max +3Grad vom eingestelten Winkel min)
 int color_scheme = 0;               // 0 = dunkel, 1 = hell / Wechsel vom color scheme für den TFT Display
-int color_marker_idx = 3;               // Farbe für den Marker für das TFT Display
+int color_marker_idx = 3;           // Farbe für den Marker für das TFT Display
+bool bOldMenu = false;               // use old rolling menu
 
 //Variablen für TFT update
 bool no_ina;
@@ -1977,16 +1992,16 @@ void setupINA219(void) {                            //Funktioniert nur wenn beid
 
 void processSetup(void) {
   int x_pos;
-  int MenuepunkteAnzahl = 9;
+  int MenuepunkteAnzahl = 10;
   int menuitem_old = -1;
-  if (bINA219_installed) {MenuepunkteAnzahl++;}
+  //if (bINA219_installed) {MenuepunkteAnzahl++;}
   int posmenu[MenuepunkteAnzahl];
-  const char *menuepunkte[MenuepunkteAnzahl] = {"Tarawerte","Kalibrieren","Füllmenge","Automatik","Servoeinst.","Parameter","Zählwerk","ZählwerkTrip","Clear Prefs"};
+  const char *menuepunkte[MenuepunkteAnzahl] = {"1-Tarawerte","2-Kalibrieren","3-Füllmenge","4-Automatik","5-Servoeinst.","6-Parameter","7-Zählwerk","8-ZählwerkTrip","9-Clear Prefs", "10-Clear Prefs"};
   //MenuepunkteAnzahl = sizeof(menuepunkte)/sizeof(menuepunkte[0]);
-  if (bINA219_installed) {
-      menuepunkte[MenuepunkteAnzahl - 1] = menuepunkte[MenuepunkteAnzahl -2];    //Clear Pref eins nach hinten schieben
-      menuepunkte[MenuepunkteAnzahl - 2] = "INA219 Setup";
-  }
+  //if (bINA219_installed) {
+  //    menuepunkte[MenuepunkteAnzahl - 1] = menuepunkte[MenuepunkteAnzahl -2];    //Clear Pref eins nach hinten schieben
+  //    menuepunkte[MenuepunkteAnzahl - 2] = "INA219 Setup";
+  //}
   modus = MODE_SETUP;
   winkel = winkel_min;          // Hahn schliessen
   servo_aktiv = 0;              // Servo-Betrieb aus
@@ -1994,6 +2009,16 @@ void processSetup(void) {
   rotary_select = SW_MENU;
   initRotaries(SW_MENU, lastpos, -1, MenuepunkteAnzahl, 1);
   while (modus == MODE_SETUP and (digitalRead(SWITCH_SETUP)) == HIGH) {
+  
+  if(start_button_very_long_pressed > 200)
+  { // pressed for > 4 seconds
+     start_button_very_long_pressed = 0;
+     bOldMenu = ! bOldMenu;
+     break; // out of here
+  }   
+
+
+
     if (rotaries[SW_MENU].Value < 0) {
       rotaries[SW_MENU].Value = (MenuepunkteAnzahl * ROTARY_SCALE) - 1;
     }
@@ -2054,17 +2079,17 @@ void processSetup(void) {
       Serial.println(menuitem);
     #endif
       lastpos = menuitem;
-      if (menuepunkte[menuitem] == "Tarawerte")     setupTara();              // Tara 
-      if (menuepunkte[menuitem] == "Kalibrieren")   setupCalibration();       // Kalibrieren 
-      if (menuepunkte[menuitem] == "Füllmenge")     setupFuellmenge();        // Füllmenge 
-      if (menuepunkte[menuitem] == "Automatik")     setupAutomatik();         // Autostart/Autokorrektur konfigurieren 
-      if (menuepunkte[menuitem] == "Servoeinst.")   setupServoWinkel();       // Servostellungen Minimum, Maximum und Feindosierung
-      if (menuepunkte[menuitem] == "Parameter")     setupParameter();         // Sonstige Einstellungen
-      if (menuepunkte[menuitem] == "Zählwerk")      setupCounter();           // Zählwerk
-      if (menuepunkte[menuitem] == "ZählwerkTrip")  setupTripCounter();       // Zählwerk Trip
-      if (menuepunkte[menuitem] == "INA219 Setup")  setupINA219();            // INA219 Setup
+      if (menuepunkte[menuitem] == "1-Tarawerte")     setupTara();              // Tara 
+      if (menuepunkte[menuitem] == "2-Kalibrieren")   setupCalibration();       // Kalibrieren 
+      if (menuepunkte[menuitem] == "3-Füllmenge")     setupFuellmenge();        // Füllmenge 
+      if (menuepunkte[menuitem] == "4-Automatik")     setupAutomatik();         // Autostart/Autokorrektur konfigurieren 
+      if (menuepunkte[menuitem] == "5-Servoeinst.")   setupServoWinkel();       // Servostellungen Minimum, Maximum und Feindosierung
+      if (menuepunkte[menuitem] == "6-Parameter")     setupParameter();         // Sonstige Einstellungen
+      if (menuepunkte[menuitem] == "7-Zählwerk")      setupCounter();           // Zählwerk
+      if (menuepunkte[menuitem] == "8-ZählwerkTrip")  setupTripCounter();       // Zählwerk Trip
+      if (menuepunkte[menuitem] == "9-INA219 Setup")  setupINA219();            // INA219 Setup
       setPreferences();
-      if (menuepunkte[menuitem] == "Clear Prefs")   setupClearPrefs();        // EEPROM löschen
+      if (menuepunkte[menuitem] == "10-Clear Prefs")   setupClearPrefs();        // EEPROM löschen
       initRotaries(SW_MENU,lastpos, 0,255, -1);                               // Menu-Parameter könnten verstellt worden sein
     }
   }
@@ -2731,7 +2756,7 @@ void setup()
   if (ina219.begin()) {
     bINA219_installed = true;
     TFT_line_print(1, "INA219 Installed!");
-    TFT_line_color(1, TFT_BLACK, TFT_RED);
+    TFT_line_color(1, TFT_BLACK, TFT_GREEN);
   }
   else {
     bINA219_installed = false;
@@ -2740,7 +2765,7 @@ void setup()
     TFT_line_color(1, TFT_BLACK, TFT_RED);
     TFT_line_blink(1, true);
   }
-  delay(2000);
+  delay(500);
 
   // Rotary
   pinMode(ENCODER_BUTTON, INPUT_PULLUP);
@@ -2762,7 +2787,6 @@ void setup()
   SERVO_WRITE(winkel_min); // set valve to closed position
 
   buzzer(BUZZER_SHORT);
-  delay(2000);
 
   // new HX711 library used
   LoadCell.begin();
@@ -2802,9 +2826,9 @@ void setup()
   // Setup der Waage, Skalierungsfaktor setzen
   if (waage_vorhanden ==1) {                         // Waage angeschlossen?
     if (faktor == 0) {                               // Vorhanden aber nicht kalibriert
-      TFT_line_print(1, "Scale Not Calibrated!");
-      TFT_line_color(1, TFT_BLACK, TFT_RED);
-      TFT_line_blink(1, true);
+      TFT_line_print(2, "Scale Not Calibrated!");
+      TFT_line_color(2, TFT_BLACK, TFT_RED);
+      TFT_line_blink(2, true);
       buzzer(BUZZER_ERROR);
     }
     else {                                          // Tara und Skalierung setzen
@@ -2813,19 +2837,19 @@ void setup()
       // scale.set_offset(long(gewicht_leer));
       LoadCell.setTareOffset((long)(gewicht_leer));	
 
-      TFT_line_print(1, "Scale Initialized!");
-      TFT_line_color(1, TFT_BLACK, TFT_GREEN);
+      TFT_line_print(2, "Scale Initialized!");
+      TFT_line_color(2, TFT_BLACK, TFT_GREEN);
     }
   }
   else {                                            // Keine Waage angeschlossen
-    TFT_line_color(1, TFT_BLACK, TFT_RED);
-    TFT_line_print(1, "No Scale Connected!"); 
-    TFT_line_blink(1, true);
+    TFT_line_color(2, TFT_BLACK, TFT_RED);
+    TFT_line_print(2, "No Scale Connected!"); 
+    TFT_line_blink(2, true);
     delay(5000);
 
     buzzer(BUZZER_ERROR);
   }
-  delay(2000);
+  delay(1000);
 
   // initiale Kalibrierung des Leergewichts wegen Temperaturschwankungen
   // Falls mehr als 20g Abweichung steht vermutlich etwas auf der Waage.
@@ -2841,9 +2865,9 @@ void setup()
       #endif
     }
     else if (faktor != 0) {
-      TFT_line_color(1, TFT_BLACK, TFT_RED);
-      TFT_line_print(1, "Please Empty Scale"); 
-      TFT_line_blink(1, true);
+      TFT_line_color(3, TFT_BLACK, TFT_RED);
+      TFT_line_print(3, "Please Empty Scale"); 
+      TFT_line_blink(3, true);
 //      #ifdef isDebug
         Serial.print("Gewicht auf der Waage: ");
         Serial.println(gewicht);
@@ -2871,7 +2895,9 @@ void setup()
   }
  
   delay(2000);
-  TFT_line_print(1, ""); // remove warnings 
+  TFT_line_print(1, ""); // remove messages, warnings 
+  TFT_line_print(2, ""); // remove messages, warnings 
+  TFT_line_print(3, ""); // remove messages, warnings 
 //  TFT_line_print(5, ""); // remove credits
   delay(2000);
 //  tft.fillScreen(TFT_BLACK);
@@ -2901,13 +2927,25 @@ void loop()
   if (bINA219_installed and inawatchdog == 1 and (current_servo > 0 or show_current == 1) and (modus == MODE_HANDBETRIEB or modus == MODE_AUTOMATIK)) {
     ina219_measurement();
   }
+
+  Serial.println(start_button_very_long_pressed);
+
+  if(start_button_very_long_pressed > 200)
+  { // pressed for > 4 seconds
+     start_button_very_long_pressed = 0;
+     bOldMenu = ! bOldMenu;
+  }   
+
   // Setup Menu 
   if(deb_setup_switch) 
-  { if (modus != MODE_SETUP)
-    { ActLcdMode = 999; // force new display build
-      SelectMenu(HANI_SETUP);
-    }  
-    processSetup();
+  { if(bOldMenu)
+    { if (modus != MODE_SETUP)
+      { ActLcdMode = 999; // force display build
+        SelectMenu(HANI_SETUP);
+      } 
+      processSetup();
+    }
+    else Menu(); // new menu style
   }
   // Automatik-Betrieb 
   else if(deb_auto_switch) {

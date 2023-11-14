@@ -131,7 +131,7 @@ void processAutomatik2(void) {
 
   // get settings for this automatic mode
   korrektur    = getRotariesValue(SW_KORREKTUR);
-  fmenge_index = getRotariesValue(SW_MENU);
+ // fmenge_index = getRotariesValue(SW_MENU);
   fmenge       = Jars[fmenge_index].Gewicht;
   tara         = Jars[fmenge_index].Tara;
 
@@ -251,10 +251,12 @@ void processAutomatik2(void) {
     case 4: 
       // need a tarra value for empty jar
       if(tara < 30)
-      { TFT_line_print(2, "No Tarra Value For Jar!");
+      { sprintf(ausgabe, "Bad Tarra Value %dg!", Jars[fmenge_index].Tara);
+        TFT_line_print(2, ausgabe);
         TFT_line_blink(2, true);
         TFT_line_color(2, TFT_BLACK, TFT_RED);
-        TFT_line_print(3, "Please Check Setup!");
+        sprintf(ausgabe, "Please Set Proper Tarra For %dg - %s", Jars[fmenge_index].Gewicht, JarNames[Jars[fmenge_index].GlasTyp].name);
+        TFT_line_print(3, ausgabe);
         state++;
         return;
       }
@@ -528,6 +530,7 @@ void processAutomatik2(void) {
   }
   else if (bINA219_installed && no_ina == 0) {
     no_ina = true;
+    gfx->fillRect(260, 187, 70, 18, COLOR_BACKGROUND);
     gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->setCursor(265, 202);

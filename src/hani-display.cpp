@@ -22,6 +22,9 @@ bool bPrintWeight = false;
 int  NewWeight = 0;
 int  OldWeight = -1234;
 
+extern int CurrentMenu;
+extern int EditMenu;
+
 
 SemaphoreHandle_t  xDisplayMutex = NULL;
 
@@ -414,6 +417,15 @@ void UpdateLCD(void)
         TFT_line_color(1, TFT_YELLOW, TFT_BLACK); // Big Weight number
         // TFT_line_print(5, "Choose Parameter & Select It");
         break;
+      case HANI_MENU:
+        CanvasColor = TFT_GREEN; 
+        for (line = 0; line < TFTNUMOFLINES; line++)
+        { MyDisplay[line].backgroundcolor = TFT_DARKGREY;
+          MyDisplay[line].textcolor = TFT_WHITE;  
+          MyDisplay[line].canvascolor = CanvasColor;  
+        }
+        tft.fillScreen(CanvasColor);
+        break;  
       default: // Mode not yet covered
         CanvasColor = TFT_WHITE; 
         tft.fillScreen(CanvasColor);
@@ -461,7 +473,7 @@ void UpdateLCD(void)
      
      // first wipe out old stuff by reprinting canvas or printing partial jpg
      if (MyDisplay[line].rounded) // not needed for square lines, only for rounded lines
-     { if (MyDisplay[line].scroll == false) // not needed for scroll texts as these are full size anyway
+     { //if (MyDisplay[line].scroll == false) // not needed for scroll texts as these are full size anyway
        { if(MyDisplay[line].canvascolor >= 0) // fixed color, not jpg canvas 
          {  if(MyDisplay[line].pixelwidth < MyDisplay[line].lastpixelwidth) // restauration canvas is needed
             { tft.fillRoundRect(0, 2, 320, 32, 0, MyDisplay[line].canvascolor); // radius 0 makes it a square
@@ -498,9 +510,10 @@ void UpdateLCD(void)
      { if (!MyDisplay[line].scroll) // this text does not scroll
        { tft.setTextColor(MyDisplay[line].textcolor, MyDisplay[line].backgroundcolor, true);
          tft.drawString(MyDisplay[line].content, 320/2, TYOFF); // centered around x coordinate 120
-         MyDisplay[line].lastpixelwidth = MyDisplay[line].pixelwidth; // so we can check later if this is a shorter or longer text to fine tune canvas restoration
+//         MyDisplay[line].lastpixelwidth = MyDisplay[line].pixelwidth; // so we can check later if this is a shorter or longer text to fine tune canvas restoration
        }
      }  
+     MyDisplay[line].lastpixelwidth = MyDisplay[line].pixelwidth; // so we can check later if this is a shorter or longer text to fine tune canvas restoration
      MyDisplay[line].refresh = false;
      if(MyDisplay[line].blink == true)
      { BlinkTimer10mS = 0; // reset the blink timer so blinking starts elegant
@@ -583,7 +596,7 @@ void UpdateLCD(void)
   }
   //Serial.println("En los2");
 
-  if(ActLcdMode == HANI_HAND)
+  if(ActLcdMode == HANI_HAND || EditMenu == SETUP_CALIBRATE)
   { if(OldWeight != NewWeight)
     { OldWeight = NewWeight;
       UseFont(Arialbd72);

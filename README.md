@@ -9,7 +9,7 @@ If you want to use ILI9341 display, see platformio.ini for build flags, and chan
 
 Is tailored to platformio which I prefer over the Arduino IDE
 
-Work in progress, provided as is.
+Work in progress, provided as is. It is not finished yet.
 
 Cheers, 
 Frank

@@ -51,7 +51,7 @@
 
 
 
-
+// for lines with backgrounds, rounded bars with text
 struct TFTline
 { bool refresh;
   char content[256];
@@ -71,6 +71,28 @@ struct TFTline
   int  lastpixelwidth;
   bool rounded; // background box rounded or not
 };
+
+// for simple menu's 8 , 20 chara
+struct TFTline2
+{ bool refresh;
+  char content[256];
+  bool scroll;
+  int  length;
+  int  pixelwidth;
+  int  scrollpos;
+  int  scrolldelay;
+  int  nchar;
+  int  toeat;
+  int  noffset;
+  int  textcolor;
+  int  backgroundcolor;
+  int  canvascolor;
+  bool blink;
+  bool blinkold;
+  int  lastpixelwidth;
+};
+
+
 
 struct JarName
 { char name[32];
@@ -107,6 +129,8 @@ struct MenuLine
   int  max;
   int  value;
   int  selected;
+  int  targetidx; // indexes to system parameter array
+  int  parmtype; // type of parameter
 };
 
 struct Menu
@@ -117,6 +141,57 @@ struct Menu
   int columns;
 }; 
 
-//struct Setup
-//{/ Menu MyMenu[];
-//}; 
+// system parameters and settings are stored in array
+// indexes as follows
+#define NOT_USED 0
+#define AUTO_START 1
+#define AUTO_JAR_TOLERANCE 2
+#define CORRECTION 3
+#define AUTO_CORRECTION 4
+#define COULANCE 5
+
+#define LIVESETUP 6
+#define SERVOMIN 7
+#define SERVOFINEDOS 8
+#define SERVOMAX 9
+
+#define JARSUSED 10
+
+#define JARARRAY 22
+
+#define BUZZER 28
+#define LED 29
+
+
+#define LANGUAGE 36
+
+
+
+
+#define LASTPARAMETER 100
+
+// types of parameters to edit
+#define SET_JAR_PRESET 0
+#define SET_ON_OFF 1
+#define SET_YES_NO 2
+#define SET_GRAMS 3
+#define SET_INTEGER 4
+#define SET_DEGREES 5
+#define SET_CURRENT 6
+#define SET_LANGUAGE 7
+#define SET_TARRA 8
+#define SET_TO_ZERO 9
+#define SET_TRIPCOUNT 10
+
+
+#define LNG_FIRST 0
+#define LNG_SET_TARA_VAL 0
+#define LNG_CALIBRATE_SCALE 1
+#define LNG_WEIGTH_PRESET 2
+#define LNG_SAVE_AND_EXIT 3
+#define LNG_LAST 4
+
+struct Trans
+{ int  index; // a define value such as LNG_SET_TARA_VAL
+  char name[6][32]; // 6 translations of one text
+};

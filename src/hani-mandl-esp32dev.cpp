@@ -38,12 +38,12 @@ extern int ActLcdMode;
 extern int NewWeight;
 extern int OldWeight;
 
-extern bool deb_start_button;
-extern bool deb_stop_button;
-extern bool deb_encoder_button;
-extern bool deb_setup_switch;
-extern bool deb_auto_switch;
-extern bool deb_manual_switch;
+extern volatile bool deb_start_button;
+extern volatile bool deb_stop_button;
+extern volatile bool deb_encoder_button;
+extern volatile bool deb_setup_switch;
+extern volatile bool deb_auto_switch;
+extern volatile bool deb_manual_switch;
 
 extern int start_button_f;
 extern int stop_button_f;
@@ -73,6 +73,9 @@ float calibrationValue;
 volatile boolean newDataReady;
 
 extern void processAutomatik2(void);
+void SetDefaultParameters(void);
+void SaveParameters(void);
+void LoadParameters(void);
 
 //
 // Hier den Code auf die verwendete Hardware einstellen
@@ -143,12 +146,13 @@ struct rotary {
 struct rotary rotaries[3]; // will be initialized in setup()
 int rotary_select = SW_WINKEL;
 
-JarName JarNames[4] = {{"DE Imker Bund","DIB"},{"TwistOff","TOF"},{"DeepTwist","DEE"},{"Special Jar","SPX"}}; // name and shortname
-JarParameter Jars[5] = {{125, 0, -9999, 0, 0}, // weight, name, tarra, tripcount, counter
+JarName JarNames[6] = {{"DE Imker Bund","DIB"},{"TwistOff","TOF"},{"DeepTwist","DEE"},{"Special Jar","SPX"},{"Ferry's DeLuxe","FDL"},{"Eco Jar","ECO"}}; // name and shortname
+JarParameter Jars[6] = {{125, 0, -9999, 0, 0}, // weight, name, tarra, tripcount, counter
                         {250, 1, -9999, 0, 0},
                         {250, 2, -9999, 0, 0},
                         {500, 1, -9999, 0, 0},
-                        {500, 0, -9999, 0, 0}};
+                        {450, 4, -9999, 0, 0},
+                        {500, 5, -9999, 0, 0}};
  
 
 // Allgemeine Variablen
@@ -218,6 +222,8 @@ int korr_alt;
 int rotary_select_alt;
 int autokorr_gr_alt;
 
+int SysParams[LASTPARAMETER];
+
 //Color Scheme für den TFT Display
 unsigned long  COLOR_BACKGROUND;
 unsigned long  COLOR_TEXT;
@@ -275,9 +281,19 @@ void tft_marker() {
 
 // Rotary Taster. Der Interrupt kommt nur im Automatikmodus zum Tragen und nur wenn der Servo inaktiv ist.
 // Der Taster schaltet in einen von drei Modi, in denen unterschiedliche Werte gezählt werden.
+volatile int EncoderSleep10mS;
+
 void IRAM_ATTR isr1() {
   static unsigned long last_interrupt_time = 0; 
   unsigned long interrupt_time = millis();
+
+  // Clicking the encoder switch, sometimes also moved the encoder knob a bit, and results in a wrong selection
+  // Another interrupt increases a time that indicates how long the encoder was not active
+  if(EncoderSleep10mS>100)EncoderSleep10mS=100;
+  EncoderSleep10mS-=10; // we need at least 10 interrupts here, to wake up the encoder
+  if(EncoderSleep10mS>0)return;
+  EncoderSleep10mS = 0;
+
   if (interrupt_time - last_interrupt_time > 300) {      // If interrupts come faster than 300ms, assume it's a bounce and ignore
     if ( modus == MODE_AUTOMATIK && servo_aktiv == 0 ) { // nur im Automatik-Modus interessiert uns der Click
       rotary_select = (rotary_select + 1) % 3;
@@ -396,19 +412,19 @@ void getPreferences(void) {
   int ResetGlasTyp[] = {0,1,2,1,0,};
   while( i < 5) {
     sprintf(ausgabe, "Gewicht%d", i);
-    Jars[i].Gewicht = preferences.getInt(ausgabe, ResetGewichte[i]);
+//    Jars[i].Gewicht = preferences.getInt(ausgabe, ResetGewichte[i]);
     preferences_chksum += Jars[i].Gewicht;
     sprintf(ausgabe, "GlasTyp%d", i);
-    Jars[i].GlasTyp = preferences.getInt(ausgabe, ResetGlasTyp[i]);
+//    Jars[i].GlasTyp = preferences.getInt(ausgabe, ResetGlasTyp[i]);
     preferences_chksum += Jars[i].GlasTyp;
     sprintf(ausgabe, "Tara%d", i);
-    Jars[i].Tara= preferences.getInt(ausgabe, -9999);
+//    Jars[i].Tara= preferences.getInt(ausgabe, -9999);
     preferences_chksum += Jars[i].Tara;
     sprintf(ausgabe, "TripCount%d", i);
-    Jars[i].TripCount = preferences.getInt(ausgabe, 0);
+//    Jars[i].TripCount = preferences.getInt(ausgabe, 0);
     preferences_chksum += Jars[i].TripCount;
     sprintf(ausgabe, "Count%d", i);
-    Jars[i].Count = preferences.getInt(ausgabe, 0);
+//    Jars[i].Count = preferences.getInt(ausgabe, 0);
     preferences_chksum += Jars[i].Count;
     i++;
   }
@@ -1996,7 +2012,7 @@ void processSetup(void) {
   int menuitem_old = -1;
   //if (bINA219_installed) {MenuepunkteAnzahl++;}
   int posmenu[MenuepunkteAnzahl];
-  const char *menuepunkte[MenuepunkteAnzahl] = {"1-Tarawerte","2-Kalibrieren","3-Füllmenge","4-Automatik","5-Servoeinst.","6-Parameter","7-Zählwerk","8-ZählwerkTrip","9-Clear Prefs", "10-Clear Prefs"};
+  const char *menuepunkte[MenuepunkteAnzahl] = {"1-Tarawerte","2-Kalibrieren","3-Füllmenge","4-Automatik","5-Servoeinst.","6-Parameter","7-Zählwerk","8-ZählwerkTrip","9-INA219 Setup", "10-Clear Prefs"};
   //MenuepunkteAnzahl = sizeof(menuepunkte)/sizeof(menuepunkte[0]);
   //if (bINA219_installed) {
   //    menuepunkte[MenuepunkteAnzahl - 1] = menuepunkte[MenuepunkteAnzahl -2];    //Clear Pref eins nach hinten schieben
@@ -2673,6 +2689,7 @@ void processHandbetrieb(void)
 
 
 volatile int interruptCounter;
+
 hw_timer_t * timer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -2704,6 +2721,8 @@ void IRAM_ATTR onTimer() // is called every 10mS
   if((interruptCounter % 100)==0) // each second
   { 
   }
+
+  EncoderSleep10mS++;
     
   portEXIT_CRITICAL_ISR(&timerMux);
 }
@@ -2726,6 +2745,9 @@ void setup()
   while (!Serial);
   Serial.println("Hanimandl Start");
   
+  SetDefaultParameters(); // fills global array with all editable parameters
+  LoadParameters(); // pull from eeprom what we have
+
   tft_colors();
   tft_marker();
   gfx->begin();
@@ -2928,7 +2950,7 @@ void loop()
     ina219_measurement();
   }
 
-  Serial.println(start_button_very_long_pressed);
+  //Serial.println(start_button_very_long_pressed);
 
   if(start_button_very_long_pressed > 200)
   { // pressed for > 4 seconds

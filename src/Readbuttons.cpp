@@ -5,12 +5,21 @@
 
 #define DEBOUNCE 5
 
-bool deb_start_button = false;
-bool deb_stop_button = false;
-bool deb_encoder_button = false;
-bool deb_setup_switch = false;
-bool deb_auto_switch = false;
-bool deb_manual_switch = false;
+// volatile, so compiler retrieves value every time
+volatile bool deb_start_button = false;
+volatile bool deb_stop_button = false;
+volatile bool deb_encoder_button = false;
+volatile bool deb_setup_switch = false;
+volatile bool deb_auto_switch = false;
+volatile bool deb_manual_switch = false;
+
+volatile bool bStartButtonPulsed = false;
+volatile bool bStopButtonPulsed = false;
+volatile bool bEncoderButtonPulsed = false;
+volatile bool bSetupSwitchPulsed = false;
+volatile bool bAutoSwitchPulsed = false;
+volatile bool bManualSwitchPulsed = false;
+
 
 int start_button_f = 1234;
 int stop_button_f = 1234;
@@ -62,6 +71,13 @@ void SetupButtons(void)
 //  rotaryEncoder.setAcceleration(0); // at 25 already questionable behaviour
 }  
 
+bool IsPulsed(bool *button)
+{ if(*button)
+  { *button = false;
+    return true;
+  }
+  return false;
+}
 
 // task to read the keys at a regular interval
 void ReadButtons(void * pvParameters)
@@ -97,6 +113,7 @@ void ReadButtons(void * pvParameters)
       { deb_start_button = act_start_button;
         start_button_f = deb_start_button;
         start_button_changed = 0;
+        if(deb_start_button)bStartButtonPulsed = true;
       } 
     }
     else start_button_changed = 0;
@@ -115,6 +132,7 @@ void ReadButtons(void * pvParameters)
       { deb_stop_button = act_stop_button;
         stop_button_f = deb_stop_button;
         stop_button_changed = 0;
+        if(deb_stop_button)bStopButtonPulsed = true;
       } 
     }
     else stop_button_changed = 0;
@@ -133,6 +151,7 @@ void ReadButtons(void * pvParameters)
       { deb_encoder_button = act_encoder_button;
         encoder_button_f = deb_encoder_button;
         encoder_button_changed = 0;
+        if(deb_encoder_button)bEncoderButtonPulsed = true;
       } 
     }
     else encoder_button_changed = 0;
@@ -153,6 +172,7 @@ void ReadButtons(void * pvParameters)
       { deb_manual_switch = act_manual_switch;
         manual_switch_f = deb_manual_switch;
         manual_switch_changed = 0;
+        if(deb_manual_switch)bManualSwitchPulsed = true;
       } 
     }
     else manual_switch_changed = 0;
@@ -171,6 +191,7 @@ void ReadButtons(void * pvParameters)
       { deb_setup_switch = act_setup_switch;
         setup_switch_f = deb_setup_switch;
         setup_switch_changed = 0;
+        if(deb_setup_switch)bSetupSwitchPulsed = true;
       } 
     }
     else setup_switch_changed = 0;
@@ -189,6 +210,9 @@ void ReadButtons(void * pvParameters)
       { deb_auto_switch = act_auto_switch;
         auto_switch_f = deb_auto_switch;
         auto_switch_changed = 0;
+        if(deb_auto_switch)bAutoSwitchPulsed = true;
+
+
       } 
     }
     else auto_switch_changed = 0;

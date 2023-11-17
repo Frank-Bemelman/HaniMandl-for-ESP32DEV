@@ -214,6 +214,7 @@ void TFT_line_color(int line, int textcolor, int backgroundcolor)
   }  
   if(MyDisplay[line].backgroundcolor != backgroundcolor)
   { MyDisplay[line].backgroundcolor = backgroundcolor;
+    MyDisplay[line].lastpixelwidth = 9999;
     MyDisplay[line].refresh = true;
   }  
 }
@@ -222,6 +223,7 @@ void TFT_line_blink(int line, bool blink)
 { MyDisplay[line].blink = blink;
   BlinkTimer10mS = 0; // reset the blink timer so blinking starts elegant
   bBlinkDisplay = 0;
+  MyDisplay[line].refresh = true;
 }
 
 
@@ -280,7 +282,7 @@ void TFT_line_print(int line, const char *content)
       }
 
       MyDisplay[line].scrollpos = 0;
-      MyDisplay[line].scrolldelay = 200; // delayed start of scolling (not implemented)
+      MyDisplay[line].scrolldelay = 20; // delayed start of scolling in 50mS steps (not implemented)
       xSemaphoreGive(xDisplayMutex);
     }
     done = true;  
@@ -552,7 +554,15 @@ void UpdateLCD(void)
  { bScrollNow = false; 
    for (line = 1; line < 6; line++)
    { if (MyDisplay[line].scroll)
-     { startMillis = micros();
+     { if(MyDisplay[line].scrolldelay)
+       { if(MyDisplay[line].scrolldelay==20)bUpdateDisplay = true; // force print first time 
+          MyDisplay[line].scrolldelay--;
+       }
+       if(!MyDisplay[line].scrolldelay || MyDisplay[line].scrolldelay==19)
+       {      
+      
+       if(MyDisplay[line].scrolldelay)MyDisplay[line].scrolldelay--;
+       startMillis = micros();
        TextDatum = tft.getTextDatum();
        tft.setTextDatum(TL_DATUM);
 
@@ -583,12 +593,12 @@ void UpdateLCD(void)
          }
        }
   
-
        MyDisplay[line].toeat -=1;
        MyDisplay[line].scrollpos++;
 
        // restore TextDatum
        tft.setTextDatum(TextDatum);
+       }
      }
    }
    bUpdateDisplay = false;

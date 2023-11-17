@@ -1,8 +1,9 @@
 #include <Arduino.h>
 
-#include <ESP32Servo.h>             /* aus dem Bibliotheksverwalter */
-#include <Arduino_GFX_Library.h>    /* aus dem Bibliotheksverwalter */
+#include <ESP32Servo.h>             
+#include <Arduino_GFX_Library.h>    
 #include <TFT_eSPI.h>               // more versatile display library
+#include <Preferences.h>            // eeprom acces library
 
 #include "hani.h"
 #include <HX711_ADC.h>
@@ -90,10 +91,12 @@ extern HX711_ADC LoadCell;
 extern int glastoleranz;              // Gewicht für autostart darf um +-20g schwanken, insgesamt also 40g!
 extern int kali_gewicht; 
 
+extern Preferences preferences;
+
 extern JarName JarNames[];
 extern JarParameter Jars[];
 
-
+extern int SysParams[];
 
 
 extern void SetupMyDisplay(void);
@@ -101,13 +104,22 @@ extern void TFT_line_print(int line, const char *content);
 extern void TFT_line_color(int line, int textcolor, int backgroundcolor);
 extern void TFT_line_blink(int line, bool blink); 
 extern void SelectMenu(int menu); 
+extern bool IsPulsed(bool *button);
 
-extern bool deb_start_button;
-extern bool deb_stop_button;
-extern bool deb_encoder_button;
-extern bool deb_setup_switch;
-extern bool deb_auto_switch;
-extern bool deb_manual_switch;
+extern volatile bool deb_start_button;
+extern volatile bool deb_stop_button;
+extern volatile bool deb_encoder_button;
+extern volatile bool deb_setup_switch;
+extern volatile bool deb_auto_switch;
+extern volatile bool deb_manual_switch;
+
+extern bool bStartButtonPulsed;
+extern bool bStopButtonPulsed;
+extern bool bEncoderButtonPulsed;
+extern bool bSetupSwitchPulsed;
+extern bool bAutoSwitchPulsed;
+extern bool bManualSwitchPulsed;
+
 
 extern int start_button_f;
 extern int stop_button_f;
@@ -132,7 +144,14 @@ extern int OldWeight;
 
 // local functions
 void CalibrateScale(void);
+void ParameterMenu(int menu);
+void GetTextForMenuLine(char* text, int menu, int line); // build a single line with text and parameters 
+void SetDefaultParameters(void);
+void SaveParameters(void);
+void LoadParameters(void);
 
+
+ 
 void Menu(void)
 { static int state = 0;
   static int newmenu;
@@ -148,7 +167,7 @@ void Menu(void)
       CurrentMenu = LastMenu;
       TFT_line_print(0, BigMenu[CurrentMenu].menuname);
       TFT_line_print(1, BigMenu[CurrentMenu].menuheader);
-      TFT_line_print(5, "Choose & Select A Menu");
+      TFT_line_print(5, "Navigate And Select");
       TFT_line_blink(5, true);
       initRotaries(SW_MENU, LastMenu, SETUP_STARTOFMENU, SETUP_ENDOFMENU, 1);
       state++;
@@ -186,29 +205,36 @@ void Menu(void)
       // use the old menus
       switch(LastMenu)
       { case 0:   
-          setupTara();              // Tara 
+          //setupTara();              // Tara 
+          ParameterMenu(0);
           break;
         case 1:   
           CalibrateScale();         // new menu
           setPreferences();
           break;
         case 2:   
-          setupFuellmenge();        // Füllmenge               
+//          setupFuellmenge();        // Füllmenge               
+          ParameterMenu(2);
           break;  
         case 3:   
-          setupAutomatik();         // Autostart/Autokorrektur konfigurieren 
+//          setupAutomatik();         // Autostart/Autokorrektur konfigurieren 
+          ParameterMenu(3);
           break;  
         case 4:   
-          setupServoWinkel();       // Servostellungen Minimum, Maximum und Feindosierung
+//          setupServoWinkel();       // Servostellungen Minimum, Maximum und Feindosierung
+          ParameterMenu(4);
           break;  
         case 5:   
-          setupParameter();         // Sonstige Einstellungen
+//          setupParameter();         // Sonstige Einstellungen
+          ParameterMenu(5);
           break;  
         case 6:   
-          setupCounter();           // Zählwerk
+//          setupCounter();           // Zählwerk
+          ParameterMenu(6);
           break;  
         case 7:   
-          setupTripCounter();       // Zählwerk Trip
+//          setupTripCounter();       // Zählwerk Trip
+          ParameterMenu(7);
           break;  
         case 8:   
           setupINA219();            // INA219 Setup    
@@ -217,6 +243,7 @@ void Menu(void)
           setupClearPrefs();        // EEPROM löschen
           break;  
         case 10:   
+          ParameterMenu(10);  // languages
           break;  
         default:   
            break;  
@@ -319,3 +346,416 @@ void CalibrateScale(void)
    } 
 
 }
+
+
+
+void ParameterMenu(int menu)
+ { int state = 0;
+   unsigned long now;
+   int scrollpos = 0; // defines offset
+   int editline = 0; // line to be changed
+   int editline_old;
+   int n;
+   int menuitems;
+   char text[128];
+   int restorevalue;
+   int restorevalue2;
+   state = 0;
+   int newvalue;
+   int column; 
+
+   IsPulsed(&bStartButtonPulsed); // reset the button flag
+   IsPulsed(&bStopButtonPulsed); // reset the button flag
+   IsPulsed(&bEncoderButtonPulsed); // reset the button flag
+   IsPulsed(&bSetupSwitchPulsed); // reset the button flag
+   IsPulsed(&bAutoSwitchPulsed); // reset the button flag
+   IsPulsed(&bManualSwitchPulsed); // reset the button flag
+
+   // first count menuitems
+   menuitems=0;
+   for(n=0;n<6;n++) // max 6 lines in menu
+   { if(BigMenu[menu].line[n].targetidx != NOT_USED)menuitems++;
+   }
+   column = 1; // work on the first column
+
+   while(true)
+   { if(IsPulsed(&bStopButtonPulsed) || !deb_setup_switch)
+     { if(state==4) // stop button and setup switch works as cancel while fiddling with the value
+       { TFT_line_blink(editline-scrollpos+1,false); // unblink
+         if(BigMenu[menu].line[editline].parmtype == SET_TARRA)TFT_line_color(editline-scrollpos+1, TFT_WHITE, TFT_BLACK); // back to normal
+         if(BigMenu[menu].line[editline].parmtype == SET_JAR_PRESET)
+         { Jars[editline].Gewicht = restorevalue;
+           Jars[editline].GlasTyp = restorevalue2;
+         }
+         else if(BigMenu[menu].line[editline].parmtype == SET_TO_ZERO)
+         { Jars[editline].Count = restorevalue;
+         }
+         else
+         { SysParams[BigMenu[menu].line[editline].targetidx] = restorevalue;
+         }
+         GetTextForMenuLine(text, menu, editline);
+         TFT_line_print(editline-scrollpos+1, text);
+         initRotaries(SW_MENU, editline, 0, menuitems, 1);
+         state = 1;  
+       }
+       else return;  
+     }
+    
+     switch(state)
+     { case 0: // (re)print content
+         for(n=0;n<4;n++) // max 4 lines to print
+         { if(BigMenu[menu].line[n+scrollpos].targetidx != NOT_USED)
+           { GetTextForMenuLine(text, menu, n+scrollpos);
+             TFT_line_print(n+1, text);
+             if(editline != (n+scrollpos))TFT_line_color(n+1, TFT_WHITE, TFT_DARKGREY);
+             else TFT_line_color(n+1, TFT_WHITE, TFT_BLACK); // display as selected
+           }  
+         }
+         TFT_line_print(5, BigMenu[menu].bottomline);
+         if(editline==menuitems)
+         { TFT_line_color(5, TFT_WHITE, TFT_BLACK);
+           TFT_line_blink(5, true);
+         }
+         else
+         { TFT_line_color(5, TFT_WHITE, TFT_DARKGREY); 
+         }
+         initRotaries(SW_MENU, editline, 0, menuitems, 1);
+         editline_old = editline; 
+         state++; 
+         break;
+
+       case 1: 
+         state++;
+         break;         
+
+       case 2: // wander through the available menu items
+         editline = getRotariesValue(SW_MENU);
+         if(editline!=editline_old)
+         { if(editline+scrollpos>3) // menuitems = 6, editline = 0-6 (7 values)
+           { if(editline<menuitems) // not on the exit line
+             { scrollpos = editline-3;
+             }
+           }
+           else
+           { if(editline<scrollpos)
+             { scrollpos = editline;
+             } 
+           }
+           state = 0;
+         }
+         else
+         { if(IsPulsed(&bEncoderButtonPulsed))  // choice is made
+           { if(editline==menuitems) // on the exit line
+             { state = 5; 
+             }
+             else
+             { TFT_line_blink(editline-scrollpos+1, true);
+               // setup encoder for this edit range
+               if(BigMenu[menu].line[editline].parmtype==SET_JAR_PRESET)
+               { restorevalue=Jars[editline].Gewicht;
+                 restorevalue2=Jars[editline].GlasTyp;
+                 initRotaries(SW_MENU, Jars[editline].Gewicht, BigMenu[menu].line[editline].min, BigMenu[menu].line[editline].max, 1);
+               }
+               else if(BigMenu[menu].line[editline].parmtype==SET_TO_ZERO)
+               {  restorevalue = Jars[editline].Count;
+                  initRotaries(SW_MENU, 0, BigMenu[menu].line[editline].min, BigMenu[menu].line[editline].max, 1);
+               }
+               else if(BigMenu[menu].line[editline].parmtype==SET_TRIPCOUNT)
+               {  restorevalue = Jars[editline].TripCount;
+                  initRotaries(SW_MENU, Jars[editline].TripCount, BigMenu[menu].line[editline].min, BigMenu[menu].line[editline].max, 1);
+               }
+               else
+               { restorevalue = SysParams[BigMenu[menu].line[editline].targetidx];
+                 initRotaries(SW_MENU, SysParams[BigMenu[menu].line[editline].targetidx], BigMenu[menu].line[editline].min, BigMenu[menu].line[editline].max, 1);
+               }  
+               state++;
+             }  
+           }
+         }   
+         break;
+
+       case 3: // wait for button released
+         state++;
+         break;  
+       case 4: // change the value with the rotary
+         newvalue = getRotariesValue(SW_MENU);
+
+         if(BigMenu[menu].line[editline].parmtype == SET_TARRA)
+         { newvalue = round(LoadCell.getData());
+           if (newvalue<10)TFT_line_color(editline-scrollpos+1, TFT_RED, TFT_BLACK);
+           else TFT_line_color(editline-scrollpos+1, TFT_GREEN, TFT_BLACK);
+         }
+         else if(BigMenu[menu].line[editline].parmtype == SET_DEGREES)
+         { if(SysParams[LIVESETUP])SERVO_WRITE(newvalue);
+         }
+         
+
+
+         if(editline<menuitems) // we have a target
+         { if(BigMenu[menu].line[editline].parmtype==SET_JAR_PRESET) // different treatment of jar presets
+           { if(column==1)
+             { if(newvalue!=Jars[editline].Gewicht)
+               { Jars[editline].Gewicht = newvalue;
+                 GetTextForMenuLine(text, menu, editline);
+                 TFT_line_print(editline-scrollpos+1, text);
+                 TFT_line_blink(editline-scrollpos+1, true);
+               }
+             }
+             else // 2nd column
+             { if(newvalue!=Jars[editline].GlasTyp)
+               { Jars[editline].GlasTyp = newvalue;
+                 GetTextForMenuLine(text, menu, editline);
+                 TFT_line_print(editline-scrollpos+1, text);
+                 TFT_line_blink(editline-scrollpos+1, true);
+               }
+             }
+           }
+           else if (BigMenu[menu].line[editline].parmtype==SET_TO_ZERO)
+           { if(newvalue!=Jars[editline].Count)
+              {Jars[editline].Count = newvalue;
+               GetTextForMenuLine(text, menu, editline);
+               TFT_line_print(editline-scrollpos+1, text);
+               TFT_line_blink(editline-scrollpos+1, true);
+             }
+           }
+           else if (BigMenu[menu].line[editline].parmtype==SET_TARRA)
+           { if(newvalue!=Jars[editline].Tara)
+              {Jars[editline].Tara = newvalue;
+               GetTextForMenuLine(text, menu, editline);
+               TFT_line_print(editline-scrollpos+1, text);
+               TFT_line_blink(editline-scrollpos+1, true);
+             }
+           }
+           else if (BigMenu[menu].line[editline].parmtype==SET_TRIPCOUNT)
+           { if(newvalue!=Jars[editline].TripCount)
+              {Jars[editline].TripCount = newvalue;
+               GetTextForMenuLine(text, menu, editline);
+               TFT_line_print(editline-scrollpos+1, text);
+               TFT_line_blink(editline-scrollpos+1, true);
+             }
+           }
+           
+           else if(newvalue!=SysParams[BigMenu[menu].line[editline].targetidx])
+           { SysParams[BigMenu[menu].line[editline].targetidx] = newvalue;
+             GetTextForMenuLine(text, menu, editline);
+             TFT_line_print(editline-scrollpos+1, text);
+             TFT_line_blink(editline-scrollpos+1, true);
+           }
+           if(IsPulsed(&bEncoderButtonPulsed))  // pressed?
+           { if(column==BigMenu[menu].columns) // time to leave
+             { TFT_line_blink(editline-scrollpos+1, false);
+               if(BigMenu[menu].line[editline].parmtype == SET_TARRA)TFT_line_color(editline-scrollpos+1, TFT_WHITE, TFT_BLACK); // back to normal
+               initRotaries(SW_MENU, editline, 0, menuitems, 1);
+               column=1;  
+               state=1;  
+               TFT_line_print(5, "Saved!");
+               TFT_line_blink(5, true);
+               SaveParameters();
+               delay(1000);
+               TFT_line_print(5, BigMenu[menu].bottomline);
+             }
+             else
+             { column++; 
+               initRotaries(SW_MENU, Jars[editline].GlasTyp, 0, 5, 1); // 5 different jar styles
+             }
+           }
+         }
+//         sprintf(text, "targetval %d", SysParams[BigMenu[menu].line[editline].targetidx]);
+//         TFT_line_print(0, text);
+         break;
+       case 5: 
+         state++; 
+         break;  
+       case 6:
+         TFT_line_print(5, "Thank You!");
+         TFT_line_blink(5, true);
+         SaveParameters();
+         state++;
+         break;
+
+       case 7:
+         state++;
+         now = millis(); 
+         break;  
+       
+       case 8:
+         if((millis()-now)>1000)state++;
+         break;  
+       case 9:
+         EditMenu = 0;
+         return;
+         break;  
+     }
+     delay(10); 
+   
+   } 
+
+}
+
+void GetTextForMenuLine(char* text, int menu, int line)
+{ int targetvalue;
+
+  targetvalue = SysParams[BigMenu[menu].line[line].targetidx];
+  
+  switch(BigMenu[menu].line[line].parmtype)
+  { case SET_JAR_PRESET:
+      sprintf(text, "%dg - %s", Jars[line].Gewicht, JarNames[Jars[line].GlasTyp].name);
+      
+      break;
+    case SET_ON_OFF:
+      sprintf(text, "%s %s", BigMenu[menu].line[line].name, (SysParams[BigMenu[menu].line[line].targetidx]==0) ? "Off" : "On");
+      break;
+    case SET_YES_NO:
+      sprintf(text, "%s %s", BigMenu[menu].line[line].name, (SysParams[BigMenu[menu].line[line].targetidx]==0) ? "No" : "Yes");
+      break;
+    case SET_GRAMS:
+      sprintf(text, "%s %dg", BigMenu[menu].line[line].name, targetvalue);
+      break;
+    case SET_INTEGER:
+      sprintf(text, "%s %d", BigMenu[menu].line[line].name, targetvalue);
+      break;
+    case SET_DEGREES:
+      sprintf(text, "%s %d°", BigMenu[menu].line[line].name, targetvalue);
+      break;
+    case SET_CURRENT:
+      sprintf(text, "%smA", BigMenu[menu].line[line].name, targetvalue);
+      break;
+    case SET_LANGUAGE:
+      sprintf(text, "%s", BigMenu[menu].line[line].name);
+      break;
+    case SET_TARRA:
+      sprintf(text, "%s %dg", JarNames[line].name, Jars[line].Tara);
+      break;
+    case SET_TO_ZERO:
+      sprintf(text, "%dg %s %d", Jars[line].Gewicht, JarNames[Jars[line].GlasTyp].name, Jars[line].Count);
+      break;
+    case SET_TRIPCOUNT:
+      sprintf(text, "%d-%s %d", Jars[line].Gewicht, JarNames[Jars[line].GlasTyp].name, Jars[line].TripCount);
+      break;
+    default:
+      break;
+  }
+}
+
+// set default values
+void SetDefaultParameters(void)
+{ int menu;
+  int line;
+  for(menu=SETUP_STARTOFMENU; menu<SETUP_ENDOFMENU;menu++)
+  { for(line=0;line<6;line++)
+    { SysParams[BigMenu[menu].line[line].targetidx] = BigMenu[menu].line[line].value;
+    }
+  }
+  SysParams[LANGUAGE] = 0; // default is English
+}
+
+void SaveParameters(void)
+{ int parameteridx;
+  char label[16];
+  int n;
+  Serial.println("Parameter Saving");
+  preferences.begin("EEPROM", false);
+  for(parameteridx=AUTO_START; parameteridx<LASTPARAMETER;parameteridx++)
+  { sprintf(label, "%d", parameteridx);
+    if( SysParams[parameteridx] != preferences.getUInt(label, -12345)) // check if new value
+    { preferences.putUInt(label, SysParams[parameteridx]);
+      Serial.print("Parameter saved - ");
+      Serial.print(label);
+      Serial.print(" = ");
+      Serial.println(SysParams[parameteridx]);
+
+    }
+  }
+
+  for(n=0;n<6;n++)
+  { sprintf(label, "jar%d-gewicht", n);
+    if(Jars[n].Gewicht != preferences.getUInt(label, -12345))
+    { preferences.putUInt(label, Jars[n].Gewicht);
+    }
+    sprintf(label, "jar%d-glastyp", n);
+    if(Jars[n].GlasTyp != preferences.getUInt(label, -12345))
+    { preferences.putUInt(label, Jars[n].GlasTyp);
+    }
+    sprintf(label, "jar%d-tara", n);
+    if(Jars[n].Tara != preferences.getUInt(label, -12345))
+    { preferences.putUInt(label, Jars[n].Tara);
+    }
+    sprintf(label, "jar%d-tripcount", n);
+    if(Jars[n].TripCount != preferences.getUInt(label, -12345))
+    { preferences.putUInt(label, Jars[n].TripCount);
+    }
+    sprintf(label, "jar%d-count", n);
+    if(Jars[n].Count != preferences.getUInt(label, -12345))
+    { preferences.putUInt(label, Jars[n].Count);
+    }
+  }
+  preferences.end();
+}
+
+void LoadParameters(void)
+{ int parameteridx;
+  int val;
+  char label[16];
+  int n;
+  Serial.println("Parameter loading");
+  preferences.begin("EEPROM", false);
+  for(parameteridx=AUTO_START; parameteridx<LASTPARAMETER;parameteridx++)
+  { sprintf(label, "%d", parameteridx);
+    val = preferences.getUInt(label, -12345); // see if we have that
+    if(val != -12345)
+    { SysParams[parameteridx] = val;
+      Serial.print("Parameter loaded - ");
+      Serial.print(label);
+      Serial.print(" = ");
+      Serial.println(SysParams[parameteridx]);
+    }
+  }
+
+    for(n=0;n<6;n++)
+  { sprintf(label, "jar%d-gewicht", n);
+    val = preferences.getUInt(label, -12345);
+    if(val != -12345)Jars[n].Gewicht = val;
+    Serial.print("Parameter loaded - ");
+    Serial.print(label);
+    Serial.print(" = ");
+    Serial.println(val);
+
+    sprintf(label, "jar%d-glastyp", n);
+    val = preferences.getUInt(label, -12345);
+    if(val != -12345)Jars[n].GlasTyp = val;
+    Serial.print("Parameter loaded - ");
+    Serial.print(label);
+    Serial.print(" = ");
+    Serial.println(val);
+
+    sprintf(label, "jar%d-tara", n);
+    val = preferences.getUInt(label, -12345);
+    if(val != -12345)Jars[n].Tara = val;
+    Serial.print("Parameter loaded - ");
+    Serial.print(label);
+    Serial.print(" = ");
+    Serial.println(val);
+
+    sprintf(label, "jar%d-tripcount", n);
+    val = preferences.getUInt(label, -12345);
+    if(val != -12345)Jars[n].TripCount = val;
+    Serial.print("Parameter loaded - ");
+    Serial.print(label);
+    Serial.print(" = ");
+    Serial.println(val);
+
+    sprintf(label, "jar%d-count", n);
+    val = preferences.getUInt(label, -12345);
+    if(val != -12345)Jars[n].Count = val;
+    Serial.print("Parameter loaded - ");
+    Serial.print(label);
+    Serial.print(" = ");
+    Serial.println(val);
+
+  }
+
+  preferences.end();
+}
+
+
+// eof

@@ -3,7 +3,7 @@
 // functions to read and debounce keys
 #include "hani.h"
 
-#define DEBOUNCE 5
+#define DEBOUNCE 3 // in 10mS units
 
 // volatile, so compiler retrieves value every time
 volatile bool deb_start_button = false;
@@ -226,7 +226,7 @@ void ReadButtons(void * pvParameters)
 
 
 
-    vTaskDelay(20 / portTICK_PERIOD_MS); // 20 msek
+    vTaskDelay(10 / portTICK_PERIOD_MS); // 10 msek
   } 
 }
 

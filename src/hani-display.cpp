@@ -265,11 +265,17 @@ void TFT_line_print(int line, const char *content)
       strcpy(MyDisplay[line].content, extAscii);
       MyDisplay[line].refresh = true;
       MyDisplay[line].length = strlen(MyDisplay[line - 1].content);
-      MyDisplay[line].pixelwidth = tft.textWidth(MyDisplay[line].content); // myTextWidth(MyDisplay[line].content); //
-
+      if(MyDisplay[line].content[2]=='*') // bar with dots
+      { sscanf(MyDisplay[line].content, "%02d*%02d", &MyDisplay[line].dotactive, &MyDisplay[line].dotmax);
+        MyDisplay[line].pixelwidth = (MyDisplay[line].dotmax * 24) + 8; // 24 pixels per dot space
+      }
+      else
+      { MyDisplay[line].dotmax = 0; // not a bar with dots
+        MyDisplay[line].pixelwidth = tft.textWidth(MyDisplay[line].content); // myTextWidth(MyDisplay[line].content); //
+      }
+  
   
 
-//      if (MyDisplay[line].pixelwidth > (320-50)) // does not fit, resort to horizontal scroll of this text
       if (MyDisplay[line].pixelwidth > (320 - (MyDisplay[line].rounded ? 50 : 6)) ) // does not fit, resort to horizontal scroll of this text
       { MyDisplay[line].scroll = true;
         strcat(extAscii, " --- "); // add --- to make it nicer when looping around
@@ -347,9 +353,10 @@ bool UpdateLCDpotentiometer(int NewShowVolume10mS)
 extern int songcount;
 void UpdateLCD(void)
 { int line;
-  int ycor;
+  int xpos, ycor;
   char text[32];
   int tw;
+  int dot;
   
   static int scrollpos = 0;
   static bool refreshdisplay = false;
@@ -406,18 +413,15 @@ void UpdateLCD(void)
         for (line = 0; line < TFTNUMOFLINES; line++)
         { MyDisplay[line].backgroundcolor = TFT_DARKGREY;
           MyDisplay[line].textcolor = TFT_WHITE;  
-          MyDisplay[line].canvascolor = TFT_BLACK;  
+          MyDisplay[line].canvascolor = TFT_BLUE;  
         }
-        // MyDisplay[5].rounded = false;
-        CanvasColor = TFT_BLACK; 
+        CanvasColor = TFT_BLUE; 
         tft.fillScreen(CanvasColor);
         BackGroundColor = TFT_DARKGREY;
         TextColor = TFT_WHITE;
         TFT_line_print(0, "MANUAL MODE PAUSED");
         TFT_line_print(3, "gram");
-        TFT_line_color(3, TFT_YELLOW, TFT_BLACK);
-        TFT_line_color(1, TFT_YELLOW, TFT_BLACK); // Big Weight number
-        // TFT_line_print(5, "Choose Parameter & Select It");
+        TFT_line_color(3, TFT_YELLOW, CanvasColor);
         break;
       case HANI_MENU:
         CanvasColor = TFT_GREEN; 
@@ -508,11 +512,25 @@ void UpdateLCD(void)
        }
      }
      
-     if(tw>0) // there is something to print
+     if(tw>0) // there is some text to print
      { if (!MyDisplay[line].scroll) // this text does not scroll
        { tft.setTextColor(MyDisplay[line].textcolor, MyDisplay[line].backgroundcolor, true);
-         tft.drawString(MyDisplay[line].content, 320/2, TYOFF); // centered around x coordinate 120
-//         MyDisplay[line].lastpixelwidth = MyDisplay[line].pixelwidth; // so we can check later if this is a shorter or longer text to fine tune canvas restoration
+         if(MyDisplay[line].dotmax == 0)
+         { tft.drawString(MyDisplay[line].content, 320/2, TYOFF); // centered around x coordinate 120
+         }
+         else // here come the dots
+         { for(dot=0;dot<=MyDisplay[line].dotmax;dot++)
+           { xpos = ((320 - tw)/2) + 3 + (dot * 24);
+             if(dot==MyDisplay[line].dotactive)
+             { // tft.drawSmoothCircle (xpos,TYOFF+10, 5, TFT_WHITE, MyDisplay[line].backgroundcolor);
+               tft.drawArc(xpos, TYOFF+10, 5, 0, 0, 360, TFT_WHITE, MyDisplay[line].backgroundcolor, true);
+             }
+             else
+             { // tft.drawSmoothCircle (xpos,TYOFF+10, 5, TFT_LIGHTGREY, MyDisplay[line].backgroundcolor);
+               tft.drawArc(xpos, TYOFF+10, 5, 0, 0, 360, TFT_DARKGREY, MyDisplay[line].backgroundcolor, true);
+             }
+           }
+         } 
        }
      }  
      MyDisplay[line].lastpixelwidth = MyDisplay[line].pixelwidth; // so we can check later if this is a shorter or longer text to fine tune canvas restoration

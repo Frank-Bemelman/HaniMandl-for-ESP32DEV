@@ -4,6 +4,7 @@
 #include <Arduino_GFX_Library.h>    
 #include <TFT_eSPI.h>               // more versatile display library
 #include <Preferences.h>            // eeprom acces library
+#include <nvs_flash.h>              /* aus dem BSP von expressif, wird verfügbar wenn das richtige Board ausgewählt ist */
 
 #include "hani.h"
 #include <HX711_ADC.h>
@@ -93,7 +94,7 @@ extern int kali_gewicht;
 
 extern Preferences preferences;
 
-extern JarName JarNames[];
+extern JarType JarTypes[];
 extern JarParameter Jars[];
 
 extern int SysParams[];
@@ -156,6 +157,7 @@ void Menu(void)
 { static int state = 0;
   static int newmenu;
   static int editmode = 0;
+  char text[64];
 
   if(modus != MODE_SETUPMENU)state = 0; // new arrival
 
@@ -167,26 +169,23 @@ void Menu(void)
       CurrentMenu = LastMenu;
       TFT_line_print(0, BigMenu[CurrentMenu].menuname);
       TFT_line_print(1, BigMenu[CurrentMenu].menuheader);
-      TFT_line_print(5, "Navigate And Select");
-      TFT_line_blink(5, true);
+      sprintf(text, "%02d*%02d", LastMenu, SETUP_ENDOFMENU); 
+//      TFT_line_print(5, "Navigate And Select");
+      TFT_line_print(5, text);
+      TFT_line_color(5, TFT_WHITE, TFT_BLACK);
+//      TFT_line_blink(5, true);
       initRotaries(SW_MENU, LastMenu, SETUP_STARTOFMENU, SETUP_ENDOFMENU, 1);
       state++;
       return;
     case 1: // wandering in top menu selection
       rotary_select = SW_MENU;
       CurrentMenu = getRotariesValue(SW_MENU);
-//      if(stop_button_f == deb_stop_button) // state change blue button next to display
-//      { stop_button_f = 1234;  
-//        if(deb_stop_button)  // pressed?
-//        { CurrentMenu++;
-//          if(CurrentMenu>SETUP_ENDOFMENU)CurrentMenu = SETUP_STARTOFMENU;
-//          setRotariesValue( SW_MENU, CurrentMenu); 
-//        }
-//      }  
       if(CurrentMenu!=LastMenu)
       { LastMenu = CurrentMenu;
         TFT_line_print(0, BigMenu[CurrentMenu].menuname);
         TFT_line_print(1, BigMenu[CurrentMenu].menuheader);
+        sprintf(text, "%02d*%02d", LastMenu, SETUP_ENDOFMENU);
+        TFT_line_print(5, text);
       }
 
       break;
@@ -240,7 +239,8 @@ void Menu(void)
           setupINA219();            // INA219 Setup    
           break;  
         case 9:   
-          setupClearPrefs();        // EEPROM löschen
+//          setupClearPrefs();        // EEPROM löschen
+          ParameterMenu(9);
           break;  
         case 10:   
           ParameterMenu(10);  // languages
@@ -519,8 +519,8 @@ void ParameterMenu(int menu)
              }
            }
            else if (BigMenu[menu].line[editline].parmtype==SET_TARRA)
-           { if(newvalue!=Jars[editline].Tara)
-              {Jars[editline].Tara = newvalue;
+           { if(newvalue!=JarTypes[editline].tarra)
+              {JarTypes[editline].tarra = newvalue;
                GetTextForMenuLine(text, menu, editline);
                TFT_line_print(editline-scrollpos+1, text);
                TFT_line_blink(editline-scrollpos+1, true);
@@ -544,6 +544,24 @@ void ParameterMenu(int menu)
            if(IsPulsed(&bEncoderButtonPulsed))  // pressed?
            { if(column==BigMenu[menu].columns) // time to leave
              { TFT_line_blink(editline-scrollpos+1, false);
+               if(BigMenu[menu].line[editline].parmtype == RESETPREFS)
+               { preferences.begin("EEPROM", false);
+                 preferences.clear();
+                 preferences.end();
+                 TFT_line_print(5, "Will Reboot Now!");
+                 TFT_line_blink(5, true);
+                 delay(2000);
+                 ESP.restart();
+               }
+               if(BigMenu[menu].line[editline].parmtype == RESETEEPROM)
+               { nvs_flash_erase();    // erase the NVS partition and...
+                 nvs_flash_init();     // initialize the NVS partition.
+                 //Da machen wir gerade einen restart
+                 TFT_line_print(5, "Will Reboot Now!");
+                 TFT_line_blink(5, true);
+                 delay(2000);
+                 ESP.restart();
+               }
                if(BigMenu[menu].line[editline].parmtype == SET_TARRA)TFT_line_color(editline-scrollpos+1, TFT_WHITE, TFT_BLACK); // back to normal
                initRotaries(SW_MENU, editline, 0, menuitems, 1);
                column=1;  
@@ -599,7 +617,7 @@ void GetTextForMenuLine(char* text, int menu, int line)
   
   switch(BigMenu[menu].line[line].parmtype)
   { case SET_JAR_PRESET:
-      sprintf(text, "%dg - %s", Jars[line].Gewicht, JarNames[Jars[line].GlasTyp].name);
+      sprintf(text, "%dg - %s", Jars[line].Gewicht, JarTypes[Jars[line].GlasTyp].name);
       
       break;
     case SET_ON_OFF:
@@ -620,17 +638,19 @@ void GetTextForMenuLine(char* text, int menu, int line)
     case SET_CURRENT:
       sprintf(text, "%smA", BigMenu[menu].line[line].name, targetvalue);
       break;
+    case SET_CLICK:  
     case SET_LANGUAGE:
       sprintf(text, "%s", BigMenu[menu].line[line].name);
       break;
     case SET_TARRA:
-      sprintf(text, "%s %dg", JarNames[line].name, Jars[line].Tara);
+      sprintf(text, "%s %dg", JarTypes[line].name, JarTypes[line].tarra);
       break;
     case SET_TO_ZERO:
-      sprintf(text, "%dg %s %d", Jars[line].Gewicht, JarNames[Jars[line].GlasTyp].name, Jars[line].Count);
+      sprintf(text, "%dg %s %d", Jars[line].Gewicht, JarTypes[Jars[line].GlasTyp].name, Jars[line].Count);
       break;
     case SET_TRIPCOUNT:
-      sprintf(text, "%d-%s %d", Jars[line].Gewicht, JarNames[Jars[line].GlasTyp].name, Jars[line].TripCount);
+      sprintf(text, "%d-%s %d", Jars[line].Gewicht, JarTypes[Jars[line].GlasTyp].name, Jars[line].TripCount);
+      break; 
       break;
     default:
       break;
@@ -647,6 +667,7 @@ void SetDefaultParameters(void)
     }
   }
   SysParams[LANGUAGE] = 0; // default is English
+  SysParams[MANUALTARRA] = 25;
 }
 
 void SaveParameters(void)
@@ -677,8 +698,8 @@ void SaveParameters(void)
     { preferences.putUInt(label, Jars[n].GlasTyp);
     }
     sprintf(label, "jar%d-tara", n);
-    if(Jars[n].Tara != preferences.getUInt(label, -12345))
-    { preferences.putUInt(label, Jars[n].Tara);
+    if(JarTypes[n].tarra != preferences.getUInt(label, -12345))
+    { preferences.putUInt(label, JarTypes[n].tarra);
     }
     sprintf(label, "jar%d-tripcount", n);
     if(Jars[n].TripCount != preferences.getUInt(label, -12345))
@@ -730,7 +751,7 @@ void LoadParameters(void)
 
     sprintf(label, "jar%d-tara", n);
     val = preferences.getUInt(label, -12345);
-    if(val != -12345)Jars[n].Tara = val;
+    if(val != -12345)JarTypes[n].tarra = val;
     Serial.print("Parameter loaded - ");
     Serial.print(label);
     Serial.print(" = ");

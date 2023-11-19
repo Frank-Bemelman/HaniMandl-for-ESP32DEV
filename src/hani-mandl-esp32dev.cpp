@@ -27,6 +27,7 @@ extern void SetupButtons(void);
 extern void ReadButtons(void * pvParameters);
 extern void SelectMenu(int menu);
 extern void Menu(void);  // big new menu handler
+extern bool IsPulsed(bool *button);
 
 extern bool bScrollNow;
 extern bool bUpdateDisplay;
@@ -44,6 +45,13 @@ extern volatile bool deb_encoder_button;
 extern volatile bool deb_setup_switch;
 extern volatile bool deb_auto_switch;
 extern volatile bool deb_manual_switch;
+
+extern bool bStartButtonPulsed;
+extern bool bStopButtonPulsed;
+extern bool bEncoderButtonPulsed;
+extern bool bSetupSwitchPulsed;
+extern bool bAutoSwitchPulsed;
+extern bool bManualSwitchPulsed;
 
 extern int start_button_f;
 extern int stop_button_f;
@@ -146,13 +154,13 @@ struct rotary {
 struct rotary rotaries[3]; // will be initialized in setup()
 int rotary_select = SW_WINKEL;
 
-JarName JarNames[6] = {{"DE Imker Bund","DIB"},{"TwistOff","TOF"},{"DeepTwist","DEE"},{"Special Jar","SPX"},{"Ferry's DeLuxe","FDL"},{"Eco Jar","ECO"}}; // name and shortname
-JarParameter Jars[6] = {{125, 0, -9999, 0, 0}, // weight, name, tarra, tripcount, counter
-                        {250, 1, -9999, 0, 0},
-                        {250, 2, -9999, 0, 0},
-                        {500, 1, -9999, 0, 0},
-                        {450, 4, -9999, 0, 0},
-                        {500, 5, -9999, 0, 0}};
+JarType JarTypes[6] = {{"DE Imker Bund","DIB",-9999},{"TwistOff","TOF",-9999},{"DeepTwist","DEE",-9999},{"Special Jar","SPX",-9999},{"Ferry's DeLuxe","FDL",-9999},{"Eco Jar","ECO",-9999}}; // name and shortname
+JarParameter Jars[6] = {{125, 0, 0, 0}, // net weight, glass, tripcount, counter
+                        {250, 1, 0, 0},
+                        {250, 2, 0, 0},
+                        {500, 1, 0, 0},
+                        {450, 4, 0, 0},
+                        {500, 5, 0, 0}};
  
 
 // Allgemeine Variablen
@@ -287,13 +295,6 @@ void IRAM_ATTR isr1() {
   static unsigned long last_interrupt_time = 0; 
   unsigned long interrupt_time = millis();
 
-  // Clicking the encoder switch, sometimes also moved the encoder knob a bit, and results in a wrong selection
-  // Another interrupt increases a time that indicates how long the encoder was not active
-  if(EncoderSleep10mS>100)EncoderSleep10mS=100;
-  EncoderSleep10mS-=10; // we need at least 10 interrupts here, to wake up the encoder
-  if(EncoderSleep10mS>0)return;
-  EncoderSleep10mS = 0;
-
   if (interrupt_time - last_interrupt_time > 300) {      // If interrupts come faster than 300ms, assume it's a bounce and ignore
     if ( modus == MODE_AUTOMATIK && servo_aktiv == 0 ) { // nur im Automatik-Modus interessiert uns der Click
       rotary_select = (rotary_select + 1) % 3;
@@ -320,7 +321,7 @@ void IRAM_ATTR isr1() {
 void IRAM_ATTR isr2() {
   static int aState;
   static int bState;
-  static int aLastState; 
+  static int aLastState;
   aState = digitalRead(ROTARY_ENCODER_A); // Reads the "current" state of the encoder
   bState = digitalRead(ROTARY_ENCODER_B); // Reads the "current" state of the encoder
   if (aState != aLastState) {     
@@ -418,8 +419,8 @@ void getPreferences(void) {
 //    Jars[i].GlasTyp = preferences.getInt(ausgabe, ResetGlasTyp[i]);
     preferences_chksum += Jars[i].GlasTyp;
     sprintf(ausgabe, "Tara%d", i);
-//    Jars[i].Tara= preferences.getInt(ausgabe, -9999);
-    preferences_chksum += Jars[i].Tara;
+//    JarTypes[i].tarra= preferences.getInt(ausgabe, -9999);
+    preferences_chksum += JarTypes[i].tarra;
     sprintf(ausgabe, "TripCount%d", i);
 //    Jars[i].TripCount = preferences.getInt(ausgabe, 0);
     preferences_chksum += Jars[i].TripCount;
@@ -459,10 +460,10 @@ void getPreferences(void) {
       Serial.println(Jars[i].Gewicht);
       sprintf(ausgabe, "GlasTyp%d = ", i);
       Serial.print(ausgabe);         
-      Serial.println(JarNames[Jars[i].GlasTyp].shortname);
+      Serial.println(JarTypes[Jars[i].GlasTyp].shortname);
       sprintf(ausgabe, "Tara%d = ", i);
       Serial.print(ausgabe);         
-      Serial.println(Jars[i].Tara);
+      Serial.println(Jars[i]JarTypes);
       i++;
     }
     Serial.print("Checksumme:");    
@@ -511,7 +512,7 @@ void setPreferences(void) {
   while( i < 5 ) {
     preferences_newchksum += Jars[i].Gewicht;
     preferences_newchksum += Jars[i].GlasTyp;
-    preferences_newchksum += Jars[i].Tara;
+    preferences_newchksum += JarTypes[i].tarra;
     i++;
   }
   if( preferences_newchksum == preferences_chksum ) {
@@ -548,7 +549,7 @@ void setPreferences(void) {
     sprintf(ausgabe, "GlasTyp%d", i);
     preferences.putInt(ausgabe, Jars[i].GlasTyp);  
     sprintf(ausgabe, "Tara%d", i);
-    preferences.putInt(ausgabe, Jars[i].Tara);
+    preferences.putInt(ausgabe, JarTypes[i].tarra);
     i++;
   }
   preferences.end();
@@ -580,9 +581,9 @@ void setPreferences(void) {
       sprintf(ausgabe, "Gewicht%d = ", i);
       Serial.print(ausgabe);         Serial.println(Jars[i].Gewicht);
       sprintf(ausgabe, "GlasTyp%d = ", i);
-      Serial.print(ausgabe);         Serial.println(JarNames[Jars[i].GlasTyp].shortname);
+      Serial.print(ausgabe);         Serial.println(JarTypes[Jars[i].GlasTyp].shortname);
       sprintf(ausgabe, "Tara%d = ", i);
-      Serial.print(ausgabe);         Serial.println(Jars[i].Tara);
+      Serial.print(ausgabe);         Serial.println(JarTypes[i].tarra);
       i++;
     }
   #endif
@@ -609,7 +610,7 @@ void setupTripCounter(void) {
     }
     for(int j=0;j<5;j++) {
       gfx->setCursor(5, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%4dg %3s", Jars[j].Gewicht, JarNames[Jars[j].GlasTyp].shortname);
+      sprintf(ausgabe, "%4dg %3s", Jars[j].Gewicht, JarTypes[Jars[j].GlasTyp].shortname);
       gfx->print(ausgabe);
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%11d St.", Jars[j].TripCount);
@@ -630,7 +631,7 @@ void setupTripCounter(void) {
     }
     for(int j=0;j<5;j++) {
       gfx->setCursor(5, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%4dg %3s", Jars[j].Gewicht,JarNames[Jars[j].GlasTyp].shortname);
+      sprintf(ausgabe, "%4dg %3s", Jars[j].Gewicht,JarTypes[Jars[j].GlasTyp].shortname);
       gfx->print(ausgabe);
       gfx->setCursor(150, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%10.3fkg", Jars[j].Gewicht * Jars[j].TripCount / 1000.0);
@@ -727,7 +728,7 @@ void setupCounter(void) {
     }
     for(int j=0;j<5;j++) {
       gfx->setCursor(5, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%4dg %3s", Jars[j].Gewicht,JarNames[Jars[j].GlasTyp].shortname);
+      sprintf(ausgabe, "%4dg %3s", Jars[j].Gewicht,JarTypes[Jars[j].GlasTyp].shortname);
       gfx->print(ausgabe);
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%11d St.", Jars[j].Count);
@@ -748,7 +749,7 @@ void setupCounter(void) {
     }
     for(int j=0;j<5;j++) {
       gfx->setCursor(5, 30+((j+1) * y_offset_tft));
-      sprintf(ausgabe, "%4dg %3s", Jars[j].Gewicht,JarNames[Jars[j].GlasTyp].shortname);
+      sprintf(ausgabe, "%4dg %3s", Jars[j].Gewicht,JarTypes[Jars[j].GlasTyp].shortname);
       gfx->print(ausgabe);
       gfx->setCursor(150, 30+((j+1) * y_offset_tft));
       sprintf(ausgabe, "%10.3fkg", Jars[j].Gewicht * Jars[j].Count / 1000.0);
@@ -842,7 +843,7 @@ void setupTara(void) {
     else if (EncoderButtonPressed()) {
       tara = round(LoadCell.getData());
       if (tara > 20) {                  // Gläser müssen mindestens 20g haben
-         Jars[getRotariesValue(SW_MENU)].Tara = tara;
+         JarTypes[getRotariesValue(SW_MENU)].tarra = tara;
       }
       change = true;
       i++;
@@ -865,15 +866,15 @@ void setupTara(void) {
       }
       gfx->setCursor(5, 60+(j*30));
       if (Jars[j].Gewicht < 1000) {
-        sprintf(ausgabe, " %3dg - %3s", Jars[j].Gewicht, JarNames[Jars[j].GlasTyp].shortname); 
+        sprintf(ausgabe, " %3dg - %3s", Jars[j].Gewicht, JarTypes[Jars[j].GlasTyp].shortname); 
       } 
       else {
-        sprintf(ausgabe, "%.1fkg - %3s", float(Jars[j].Gewicht) / 1000, JarNames[Jars[j].GlasTyp].shortname); 
+        sprintf(ausgabe, "%.1fkg - %3s", float(Jars[j].Gewicht) / 1000, JarTypes[Jars[j].GlasTyp].shortname); 
       }
       gfx->println(ausgabe);
       gfx->setCursor(215, 60+(j*30));
-      if (Jars[j].Tara > 0) { 
-        sprintf(ausgabe, "  %4dg", Jars[j].Tara); 
+      if (JarTypes[j].tarra > 0) { 
+        sprintf(ausgabe, "  %4dg", JarTypes[j].tarra); 
         gfx->print(ausgabe);
       }
       else {
@@ -1339,7 +1340,7 @@ void setupFuellmenge(void) {
       gfx->print(ausgabe);
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
 
-      gfx->print(JarNames[Jars[j].GlasTyp].name);
+      gfx->print(JarTypes[Jars[j].GlasTyp].name);
     }
     if (EncoderButtonTapped()) { // Füllmenge gewählt
       i = 0;
@@ -1366,14 +1367,14 @@ void setupFuellmenge(void) {
       gfx->print(ausgabe);
       gfx->setTextColor(COLOR_TEXT);
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
-      gfx->print(JarNames[Jars[j].GlasTyp].name);
+      gfx->print(JarTypes[Jars[j].GlasTyp].name);
     }
     if (EncoderButtonTapped()) { // Gewicht bestätigt
       i = 0;
     }
   }
   i = 1;
-  initRotaries(SW_MENU, Jars[pos].GlasTyp, 0, sizeof(JarNames)/sizeof(JarNames[0]) - 1, 1);
+  initRotaries(SW_MENU, Jars[pos].GlasTyp, 0, sizeof(JarTypes)/sizeof(JarTypes[0]) - 1, 1);
   while (i > 0){ 
     if (digitalRead(BUTTON_STOP) == HIGH or digitalRead(SWITCH_SETUP) == LOW) {
       while (digitalRead(BUTTON_STOP) == HIGH);
@@ -1386,14 +1387,14 @@ void setupFuellmenge(void) {
       sprintf(ausgabe, "%4dg", Jars[j].Gewicht);
       gfx->print(ausgabe);
       if (j == pos) {
-        if (wert_old != String(JarNames[Jars[j].GlasTyp].name)) {
+        if (wert_old != String(JarTypes[Jars[j].GlasTyp].name)) {
           gfx->fillRect(100, 27+((j+1) * y_offset_tft)-19, 220, 27, COLOR_BACKGROUND);
-          wert_old = String(JarNames[Jars[j].GlasTyp].name);
+          wert_old = String(JarTypes[Jars[j].GlasTyp].name);
         }
         gfx->setTextColor(COLOR_MARKER);
       }
       gfx->setCursor(110, 30+((j+1) * y_offset_tft));
-gfx->print(JarNames[Jars[j].GlasTyp].name);
+gfx->print(JarTypes[Jars[j].GlasTyp].name);
       gfx->setTextColor(COLOR_TEXT);
     }
     if (EncoderButtonTapped()) { //GlasTyp bestätigt
@@ -1402,7 +1403,7 @@ gfx->print(JarNames[Jars[j].GlasTyp].name);
     }
   }
   fmenge = Jars[pos].Gewicht;
-  tara   = Jars[pos].Tara;
+  tara   = JarTypes[pos].tarra;
   fmenge_index = pos; 
   modus = -1;
   i = 0;
@@ -2222,7 +2223,7 @@ void processAutomatik(void) {
   korrektur    = getRotariesValue(SW_KORREKTUR);
   fmenge_index = getRotariesValue(SW_MENU);
   fmenge       = Jars[fmenge_index].Gewicht;
-  tara         = Jars[fmenge_index].Tara;
+  tara         = JarTypes[fmenge_index].tarra;
   if (tara <= 0) { 
     auto_aktiv = 0;
   }
@@ -2485,7 +2486,7 @@ void processAutomatik(void) {
     gfx->print(ausgabe);
     gfx->setFont(Punk_Mono_Thin_240_150);
     gfx->setCursor(110, 176);
-    gfx->print(JarNames[Jars[fmenge_index].GlasTyp].name);
+    gfx->print(JarTypes[Jars[fmenge_index].GlasTyp].name);
 
     gfx->setTextColor(COLOR_TEXT);
     glas_alt = fmenge_index;
@@ -2598,75 +2599,90 @@ void processAutomatik(void) {
 }
 
 void processHandbetrieb(void) 
-{ i = 0;
-  int y_offset = 0;
+{ // function is not blocking, conditional part of main loop
+  i = 0;
+  static int manualtarra_old;
+  static int desired_angle;
+  static int desired_angle_old;
+  char text[64];
   
-  if (modus != MODE_HANDBETRIEB) // draw screen just once
+  if (modus != MODE_HANDBETRIEB) // just once
   { modus = MODE_HANDBETRIEB;
-    winkel = winkel_min;          // Hahn schliessen
-    servo_aktiv = 0;              // Servo-Betrieb aus
-    SERVO_WRITE(winkel);
-    rotary_select = SW_WINKEL;
-    tara = 0;
+    desired_angle = winkel_min;
+    desired_angle_old = -1;       
+    SERVO_WRITE(desired_angle);
     offset_winkel = 0;            // Offset vom Winkel wird auf 0 gestellt
-    int x_pos;
-    gewicht_alt = -9999999;
+    servo_aktiv = 0;              // Servo-Betrieb aus
+    rotary_select = SW_WINKEL;
+    manualtarra_old = -1;
     OldWeight = -1234;
-    pos_alt = -1;
-    winkel_min_alt = -1;
-    tara_alt = -1;
     current_mA_alt = -1;
     servo_aktiv_alt = -1;
   }
   
-  pos = getRotariesValue(SW_WINKEL);
-  gewicht = round(LoadCell.getData()) - tara;
-
-  if(deb_start_button)servo_aktiv = 1;
-  if(deb_stop_button)servo_aktiv = 0;
+  if(IsPulsed(&bStopButtonPulsed))servo_aktiv = 0;
+  if(IsPulsed(&bStartButtonPulsed))servo_aktiv = 1;
 
   if (servo_aktiv != servo_aktiv_alt) 
   { servo_aktiv_alt = servo_aktiv;
     if (servo_aktiv == 1)
     { TFT_line_print(0, "MANUAL MODE DOSING");
       TFT_line_blink(0, true);
+      TFT_line_color(4, TFT_WHITE, TFT_DARKGREY); 
       TFT_line_color(5, TFT_GREEN, TFT_DARKGREY);
-
     }
     else 
     { TFT_line_print(0, "MANUAL MODE PAUSED");
       TFT_line_blink(0, false);
-      TFT_line_color(5, TFT_LIGHTGREY, TFT_DARKGREY);
+      TFT_line_color(4, TFT_WHITE, TFT_BLACK); 
+      TFT_line_blink(4, true);
+      tara_alt = -1; // force reprint without current shown
+      TFT_line_color(5, TFT_WHITE, TFT_DARKGREY);
     }
   }
 
-  if(deb_encoder_button)tara = round(LoadCell.getData());
-    
-  if(servo_aktiv == 1)winkel = ((winkel_max * pos) / 100);
-  else winkel = winkel_min + offset_winkel;
-  winkel = constrain(winkel, winkel_min + offset_winkel, winkel_max);
-  SERVO_WRITE(winkel);
-
-  if (gewicht != gewicht_alt) 
-  { gewicht_alt = gewicht;
-    NewWeight = gewicht; // NewWeight is used by new graphics handling
+    // set tarra with encoder button
+  if(IsPulsed(&bEncoderButtonPulsed))
+  { if(servo_aktiv == 0) // only accept new tarra in paused mode
+    SysParams[MANUALTARRA] = round(LoadCell.getData());
+    SaveParameters();
   }
 
-  if(((winkel_min + offset_winkel) != winkel_min_alt) || (pos != pos_alt))
-  { sprintf(ausgabe, "Servo Min: %3d° Max: %3d°", (winkel_min + offset_winkel), (winkel_max*pos/100));
-    TFT_line_print(5, ausgabe);
-    winkel_min_alt = winkel_min + offset_winkel;
-    pos_alt = pos;
-  }
+  // get encoder value
+  pos = getRotariesValue(SW_WINKEL); // value 0-100  
+  desired_angle = (winkel_max * pos) / 100;
+  desired_angle = constrain(desired_angle, winkel_min + offset_winkel, winkel_max);
+
+  // close valve in paused mode
+  if(servo_aktiv == 0)SERVO_WRITE(winkel_min + offset_winkel);
+  else SERVO_WRITE(desired_angle); // update valve
+  
+  // print the big weight in grams, NewWeight is used by new graphics handling
+  NewWeight = round(LoadCell.getData()) - SysParams[MANUALTARRA];
 
   // tarra value & current value for servo, printed on one line
-  if((tara != tara_alt) || (bINA219_installed && (current_mA != current_mA_alt) && (current_servo > 0 or show_current == 1)))
-  { sprintf(ausgabe, "Tarra: %3dg", tara);
-    if(bINA219_installed && (current_mA != current_mA_alt) && (current_servo > 0 or show_current == 1))
-    { sprintf(&ausgabe[strlen(ausgabe)], " Servo: %dmA", current_mA);
+  if((SysParams[MANUALTARRA] != manualtarra_old) || (current_mA != current_mA_alt))
+  { manualtarra_old = SysParams[MANUALTARRA];
+    sprintf(text, "Tarra %dg", SysParams[MANUALTARRA]);
+    if(servo_aktiv==1)
+    { if(bINA219_installed && (current_mA != current_mA_alt))
+      { if(show_current == 1)
+        { sprintf(&text[strlen(text)], " Servo %dmA", current_mA);
+        }
+      }  
     }
-    TFT_line_print(4, ausgabe);
+    current_mA_alt = current_mA;
+    TFT_line_print(4, text);
+    if(servo_aktiv==0)TFT_line_blink(4, true);
   }
+
+  // print allowable range and angle chosen for servo
+  if(desired_angle != desired_angle_old)
+  { desired_angle_old = desired_angle;
+    sprintf(text, "Range %d°-%d° Servo %d°", (winkel_min + offset_winkel), winkel_max, desired_angle);
+    TFT_line_print(5, text);
+  }
+
 
   if (alarm_overcurrent) {i = 1;}
   while (i > 0) {
@@ -2684,7 +2700,7 @@ void processHandbetrieb(void)
     inawatchdog = 1;
     alarm_overcurrent = 0;
   }
-  setPreferences();         //irgendwo anderst setzen. es muss nicht jede änderung geschrieben werden
+  //setPreferences();         //irgendwo anderst setzen. es muss nicht jede änderung geschrieben werden
 }
 
 
@@ -2735,7 +2751,8 @@ void dataReadyISR() {
 }
 
 void setup() 
-{ // timer for all sorts of things including lcd display updates
+{ int wait;
+  // timer for all sorts of things including lcd display updates
   timer = timerBegin(0, 80, true); // prescaler 1MHz
   timerAttachInterrupt(timer, &onTimer, true);
   timerAlarmWrite(timer, 10000, true); // elke 10mS
@@ -2915,24 +2932,43 @@ void setup()
       }
     }
   }
- 
-  delay(2000);
+  TFT_line_print(3, "Any Button To Skip"); 
+  TFT_line_blink(3, true);
+  
+  IsPulsed(&bStartButtonPulsed); // reset the button flag
+  IsPulsed(&bStopButtonPulsed); // reset the button flag
+  IsPulsed(&bEncoderButtonPulsed); // reset the button flag
+  IsPulsed(&bSetupSwitchPulsed); // reset the button flag
+  IsPulsed(&bAutoSwitchPulsed); // reset the button flag
+  IsPulsed(&bManualSwitchPulsed); // reset the button flag
+   
+  wait = 2000;
+  while(wait)
+  { wait -= 100;
+    delay(100);
+    if(IsPulsed(&bStartButtonPulsed))break; 
+    if(IsPulsed(&bStopButtonPulsed))break; 
+    if(IsPulsed(&bEncoderButtonPulsed))break; 
+    if(IsPulsed(&bSetupSwitchPulsed))break; 
+    if(IsPulsed(&bAutoSwitchPulsed))break; 
+    if(IsPulsed(&bManualSwitchPulsed))break;
+  }
   TFT_line_print(1, ""); // remove messages, warnings 
   TFT_line_print(2, ""); // remove messages, warnings 
   TFT_line_print(3, ""); // remove messages, warnings 
-//  TFT_line_print(5, ""); // remove credits
-  delay(2000);
-//  tft.fillScreen(TFT_BLACK);
-  delay(2000);
   
-//  tft_colors();
-//  tft_marker();
-//  gfx->begin();
-//  gfx->fillScreen(COLOR_BACKGROUND);
-//  gfx->setUTF8Print(true);
-
-
-
+  if(wait)wait = 0;
+  else wait = 60000;
+  while(wait)
+  { wait -= 100;
+    delay(100);
+    if(IsPulsed(&bStartButtonPulsed))break; 
+    if(IsPulsed(&bStopButtonPulsed))break; 
+    if(IsPulsed(&bEncoderButtonPulsed))break; 
+    if(IsPulsed(&bSetupSwitchPulsed))break; 
+    if(IsPulsed(&bAutoSwitchPulsed))break; 
+    if(IsPulsed(&bManualSwitchPulsed))break;
+  } 
 
   // die drei Datenstrukturen des Rotaries initialisieren
   initRotaries(SW_WINKEL,    0,   0, 100, 5);     // Winkel

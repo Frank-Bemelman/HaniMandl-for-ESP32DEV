@@ -70,40 +70,21 @@ struct TFTline
   bool blinkold;
   int  lastpixelwidth;
   bool rounded; // background box rounded or not
+  int  dotactive; // for bar with dots
+  int  dotmax; // max dots in bar
 };
 
-// for simple menu's 8 , 20 chara
-struct TFTline2
-{ bool refresh;
-  char content[256];
-  bool scroll;
-  int  length;
-  int  pixelwidth;
-  int  scrollpos;
-  int  scrolldelay;
-  int  nchar;
-  int  toeat;
-  int  noffset;
-  int  textcolor;
-  int  backgroundcolor;
-  int  canvascolor;
-  bool blink;
-  bool blinkold;
-  int  lastpixelwidth;
-};
-
-
-
-struct JarName
+// structure that describes the various jars we use
+struct JarType
 { char name[32];
   char shortname[4];
+  int tarra; // weight of empty jar
 };
 
 // Füllmengen für 5 verschiedene Gläser
 struct JarParameter { 
   int Gewicht;
   int GlasTyp;
-  int Tara;
   int TripCount;
   int Count;
 };
@@ -156,6 +137,7 @@ struct Menu
 #define SERVOMAX 9
 
 #define JARSUSED 10
+#define MANUALTARRA 11
 
 #define JARARRAY 22
 
@@ -182,7 +164,12 @@ struct Menu
 #define SET_TARRA 8
 #define SET_TO_ZERO 9
 #define SET_TRIPCOUNT 10
+#define SET_CLICK 11
+#define RESETPREFS 12
+#define RESETEEPROM 13
 
+
+// language stuff, lot todo
 
 #define LNG_FIRST 0
 #define LNG_SET_TARA_VAL 0

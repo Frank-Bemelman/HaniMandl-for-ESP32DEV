@@ -2,6 +2,8 @@
 //#include <AiEsp32RotaryEncoder.h>
 // functions to read and debounce keys
 #include "hani.h"
+#include <HX711_ADC.h>
+
 
 #define DEBOUNCE 3 // in 10mS units
 
@@ -34,6 +36,14 @@ int encoder_button_very_long_pressed = 0;
 int setup_switch_very_long_pressed = 0;
 int auto_switch_very_long_pressed = 0;
 int manual_switch_very_long_pressed = 0;
+
+extern rotary rotaries[]; // will be initialized in setup()
+
+int GramsOnScale; // actual weight on scale, maintained in interrupt
+
+bool bScaleStable; // flag, true = stable, false is unstable
+extern HX711_ADC LoadCell;
+
 
 //int rotary_loop(int resetvalue);
 
@@ -94,12 +104,31 @@ void ReadButtons(void * pvParameters)
   int auto_switch_changed =0;;
   int manual_switch_changed =0;;
   int encoder_button_changed = 0;
-  
-  
 
+  int n;
+  int readcounter;  
+  int oldgramsonscale;
+  int scalestable;
    
   while(1)
-  { act_start_button = digitalRead(BUTTON_START); 
+  { readcounter++;
+    // shift register for rotary value, shift one place
+    // this is to preventing the encoder knob to register an accidental last moment change of the encoder
+    for(n=0;n<3;n++)
+    { rotaries[n].Value[0] = rotaries[n].Value[1];
+      rotaries[n].Value[1] = rotaries[n].Value[2];
+    }
+    
+    // read scale every 100mS
+    if((readcounter % 10) == 0)
+    { GramsOnScale = (int)(LoadCell.getData()+0.5);
+      if(abs(oldgramsonscale - GramsOnScale)>2)scalestable=5; // 5x100mS or half a second of stable readings needed
+      else if(scalestable)scalestable--;
+      bScaleStable = (scalestable==0); // set flag true if scale has settled
+      oldgramsonscale = GramsOnScale;
+    }
+    
+    act_start_button = digitalRead(BUTTON_START); 
     act_stop_button = digitalRead(BUTTON_STOP); 
     act_encoder_button = !digitalRead(ENCODER_BUTTON); // normally high, open switch with pullup
     act_setup_switch = digitalRead(SWITCH_SETUP); // high when selected

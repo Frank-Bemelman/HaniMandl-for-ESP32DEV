@@ -15,23 +15,13 @@ extern void buzzer(byte type);
 extern void initRotaries( int rotary_mode, int rotary_value, int rotary_min, int rotary_max, int rotary_step );
 extern int getRotariesValue( int rotary_mode );
 extern void setRotariesValue( int rotary_mode, int rotary_value );
-extern void setupTara();              // Tara 
-extern void setupCalibration();       // Kalibrieren
-extern void setupFuellmenge();        // Füllmenge               
-extern void setupAutomatik();         // Autostart/Autokorrektur konfigurieren 
-extern void setupServoWinkel();       // Servostellungen Minimum, Maximum und Feindosierung
-extern void setupParameter();         // Sonstige Einstellungen
-extern void setupCounter();           // Zählwerk
-extern void setupTripCounter();       // Zählwerk Trip
 extern void setupINA219();            // INA219 Setup    
-extern void setupClearPrefs();        // EEPROM löschen
 
 
 extern int alarm_overcurrent;          // Alarmflag wen der Servo zuwiel Strom zieht
 extern int current_mA;                     // Strom welcher der Servo zieht
 extern int current_servo;              // 0 = INA219 wird ignoriert, 1-1000 = erlaubter Maximalstrom vom Servo in mA
 extern int offset_winkel;              // Offset in Grad vom Schlieswinkel wen der Servo Überstrom hatte (max +3Grad vom eingestelten Winkel min)
-extern int winkel_min;                 // konfigurierbar im Setup
 extern Servo servo;
 extern int inawatchdog;                // 0 = aus, 1 = ein / wird benötigt um INA messung auszusetzen
 extern Arduino_GFX *gfx;
@@ -63,41 +53,36 @@ extern int pos;                            // aktuelle Position des Poti bzw. Ro
 extern int gewicht;                        // aktuelles Gewicht
 extern int tara;                           // Tara für das ausgewählte Glas, für Automatikmodus
 extern int tara_glas;                      // Tara für das aktuelle Glas, falls Glasgewicht abweicht
-extern long gewicht_leer;                  // Gewicht der leeren Waage
-extern float faktor;                       // Skalierungsfaktor für Werte der Waage
+extern long rawtareoffset;                  // Gewicht der leeren Waage
+extern float CalibrationFactor;            // Skalierungsfaktor für Werte der Waage
 extern int fmenge;                         // ausgewählte Füllmenge
 extern int fmenge_index;                   // Index in gläser[]
 extern int korrektur;                      // Korrekturwert für Abfüllmenge
-extern int autostart;                      // Vollautomatik ein/aus
-extern int autokorrektur;                  // Autokorrektur ein/aus
-extern int kulanz_gr;                      // gewollte Überfüllung im Autokorrekturmodus in Gramm
 
 extern int progressbar;                // Variable für den Progressbar
 extern char ausgabe[];                   // Fontsize 12 = 13 Zeichen maximal in einer Zeile
 extern int modus;                     // Bei Modus-Wechsel den Servo auf Minimum fahren
 extern int auto_aktiv;                 // Für Automatikmodus - System ein/aus?
 extern int winkel;                         // aktueller Servo-Winkel
-extern int winkel_min;                 // konfigurierbar im Setup
-extern int winkel_max;                // konfigurierbar im Setup
-extern int winkel_fein;               // konfigurierbar im Setup
 extern float fein_dosier_gewicht;     // float wegen Berechnung des Schliesswinkels
 extern int servo_aktiv;                // Servo aktivieren ja/nein
-extern const char *GlasTypArray[];
 extern int StringLenght(String a);
 extern int rotary_select;
 extern int show_current;               // 0 = aus, 1 = ein / Zeige den Strom an auch wenn der INA ignoriert wird
 extern bool bINA219_installed;   
 extern bool gezaehlt;               // Kud Zähl-Flag
 extern HX711_ADC LoadCell;
-extern int glastoleranz;              // Gewicht für autostart darf um +-20g schwanken, insgesamt also 40g!
 extern int kali_gewicht; 
 
 extern Preferences preferences;
 
 extern JarType JarTypes[];
-extern JarParameter Jars[];
+extern ProductParameter Products[];
 
 extern int SysParams[];
+extern int GramsOnScale;
+extern int ScaleStable;
+
 
 
 extern void SetupMyDisplay(void);
@@ -153,7 +138,7 @@ void LoadParameters(void);
 
 
  
-void Menu(void)
+void MenuHandler(void)
 { static int state = 0;
   static int newmenu;
   static int editmode = 0;
@@ -209,7 +194,6 @@ void Menu(void)
           break;
         case 1:   
           CalibrateScale();         // new menu
-          setPreferences();
           break;
         case 2:   
 //          setupFuellmenge();        // Füllmenge               
@@ -263,17 +247,26 @@ void CalibrateScale(void)
    int gewicht_alt = -9999;
    int kali_gewicht_old = -9999;
    unsigned long now;
+   char text[64];
+
+   IsPulsed(&bStartButtonPulsed); // reset the button flag
+   IsPulsed(&bStopButtonPulsed); // reset the button flag
+   IsPulsed(&bEncoderButtonPulsed); // reset the button flag
+   IsPulsed(&bSetupSwitchPulsed); // reset the button flag
+   IsPulsed(&bAutoSwitchPulsed); // reset the button flag
+   IsPulsed(&bManualSwitchPulsed); // reset the button flag
+
 
    OldWeight = 0;
    while(true)
-   { if(state==7) // waiting loop, nice to display weight 
-     { NewWeight = round(LoadCell.getData());
+   { if(state==7) // waiting loop, nice to display weight after calibration
+     { NewWeight = GramsOnScale;
      }
 
     
-     if(deb_stop_button || !deb_setup_switch)
+     if(IsPulsed(&bStopButtonPulsed) || !deb_setup_switch)
      { if(state<5)
-       { LoadCell.setCalFactor(faktor); 
+       { LoadCell.setCalFactor(CalibrationFactor); 
        }
        state = 8; // Quick exit
      }
@@ -283,22 +276,19 @@ void CalibrateScale(void)
          TFT_line_print(4, "Empty Scale Please!");
          TFT_line_blink(4, true);
          TFT_line_print(5, "Continue When Done");
-         if(!deb_encoder_button) state++; // proceed when button released
+         state++; 
          break;
        case 1: // wait for button
-         if(deb_encoder_button)  // pressed?)
+         if(IsPulsed(&bEncoderButtonPulsed))  // encoder pressed?)
          { LoadCell.setCalFactor(1);
-           LoadCell.tare();
-           delay(500);
+           LoadCell.tare(); // returns after actual tarring
            state++;
          }
          break;
-       case 2: // wait for button released
-         if(!deb_encoder_button)  // pressed?)
-         { state++;
-         }
+       case 2: 
+         state++;
          break;  
-       case 3: // wait for button released
+       case 3: 
          TFT_line_color(3, TFT_BLACK, TFT_RED);
          TFT_line_print(3, "Place A Known Weight");
          TFT_line_blink(3, true);
@@ -311,19 +301,24 @@ void CalibrateScale(void)
          {  sprintf(ausgabe, "Calibrate As %d gram", kali_gewicht);
             TFT_line_print(4, ausgabe);
          }
-         if(deb_encoder_button)  // pressed?)
+         if(IsPulsed(&bEncoderButtonPulsed))
          { state++; 
          }
          break;  
        case 5:
-         gewicht_raw = round(LoadCell.getData());
-         faktor = gewicht_raw / kali_gewicht;
-         LoadCell.setCalFactor(faktor); 
-         gewicht_leer = LoadCell.getTareOffset(); 
-         TFT_line_print(3, "");
-         TFT_line_print(4, "");
+         gewicht_raw = GramsOnScale;
+         CalibrationFactor = gewicht_raw / kali_gewicht;
+         LoadCell.setCalFactor(CalibrationFactor); 
+         rawtareoffset = LoadCell.getTareOffset(); // should be zero after fresh calibration
+         //sprintf(text,"Empty Raw Weight = %d", rawtareoffset);
+         //TFT_line_print(3, text);
+         //sprintf(text,"Calibration Factor = %f", CalibrationFactor);
+         //TFT_line_print(4, text);
          TFT_line_print(5, "Thank You!");
          TFT_line_blink(5, true);
+         setPreferences();
+         SaveParameters();
+         delay(1000);
          EditMenu = CurrentMenu;  // bepaalt of gewicht geprint wordt
          state++;
          break;
@@ -384,11 +379,11 @@ void ParameterMenu(int menu)
        { TFT_line_blink(editline-scrollpos+1,false); // unblink
          if(BigMenu[menu].line[editline].parmtype == SET_TARRA)TFT_line_color(editline-scrollpos+1, TFT_WHITE, TFT_BLACK); // back to normal
          if(BigMenu[menu].line[editline].parmtype == SET_JAR_PRESET)
-         { Jars[editline].Gewicht = restorevalue;
-           Jars[editline].GlasTyp = restorevalue2;
+         { Products[editline].Gewicht = restorevalue;
+           Products[editline].GlasTyp = restorevalue2;
          }
          else if(BigMenu[menu].line[editline].parmtype == SET_TO_ZERO)
-         { Jars[editline].Count = restorevalue;
+         { Products[editline].Count = restorevalue;
          }
          else
          { SysParams[BigMenu[menu].line[editline].targetidx] = restorevalue;
@@ -452,17 +447,18 @@ void ParameterMenu(int menu)
              { TFT_line_blink(editline-scrollpos+1, true);
                // setup encoder for this edit range
                if(BigMenu[menu].line[editline].parmtype==SET_JAR_PRESET)
-               { restorevalue=Jars[editline].Gewicht;
-                 restorevalue2=Jars[editline].GlasTyp;
-                 initRotaries(SW_MENU, Jars[editline].Gewicht, BigMenu[menu].line[editline].min, BigMenu[menu].line[editline].max, 1);
+               { restorevalue=Products[editline].Gewicht;
+                 restorevalue2=Products[editline].GlasTyp;
+                 TFT_line_print(5, "Please Set Net Weight");
+                 initRotaries(SW_MENU, Products[editline].Gewicht, BigMenu[menu].line[editline].min, BigMenu[menu].line[editline].max, 1);
                }
                else if(BigMenu[menu].line[editline].parmtype==SET_TO_ZERO)
-               {  restorevalue = Jars[editline].Count;
+               {  restorevalue = Products[editline].Count;
                   initRotaries(SW_MENU, 0, BigMenu[menu].line[editline].min, BigMenu[menu].line[editline].max, 1);
                }
                else if(BigMenu[menu].line[editline].parmtype==SET_TRIPCOUNT)
-               {  restorevalue = Jars[editline].TripCount;
-                  initRotaries(SW_MENU, Jars[editline].TripCount, BigMenu[menu].line[editline].min, BigMenu[menu].line[editline].max, 1);
+               {  restorevalue = Products[editline].TripCount;
+                  initRotaries(SW_MENU, Products[editline].TripCount, BigMenu[menu].line[editline].min, BigMenu[menu].line[editline].max, 1);
                }
                else
                { restorevalue = SysParams[BigMenu[menu].line[editline].targetidx];
@@ -481,7 +477,7 @@ void ParameterMenu(int menu)
          newvalue = getRotariesValue(SW_MENU);
 
          if(BigMenu[menu].line[editline].parmtype == SET_TARRA)
-         { newvalue = round(LoadCell.getData());
+         { newvalue = GramsOnScale;
            if (newvalue<10)TFT_line_color(editline-scrollpos+1, TFT_RED, TFT_BLACK);
            else TFT_line_color(editline-scrollpos+1, TFT_GREEN, TFT_BLACK);
          }
@@ -494,16 +490,16 @@ void ParameterMenu(int menu)
          if(editline<menuitems) // we have a target
          { if(BigMenu[menu].line[editline].parmtype==SET_JAR_PRESET) // different treatment of jar presets
            { if(column==1)
-             { if(newvalue!=Jars[editline].Gewicht)
-               { Jars[editline].Gewicht = newvalue;
+             { if(newvalue!=Products[editline].Gewicht)
+               { Products[editline].Gewicht = newvalue;
                  GetTextForMenuLine(text, menu, editline);
                  TFT_line_print(editline-scrollpos+1, text);
                  TFT_line_blink(editline-scrollpos+1, true);
                }
              }
              else // 2nd column
-             { if(newvalue!=Jars[editline].GlasTyp)
-               { Jars[editline].GlasTyp = newvalue;
+             { if(newvalue!=Products[editline].GlasTyp)
+               { Products[editline].GlasTyp = newvalue;
                  GetTextForMenuLine(text, menu, editline);
                  TFT_line_print(editline-scrollpos+1, text);
                  TFT_line_blink(editline-scrollpos+1, true);
@@ -511,8 +507,8 @@ void ParameterMenu(int menu)
              }
            }
            else if (BigMenu[menu].line[editline].parmtype==SET_TO_ZERO)
-           { if(newvalue!=Jars[editline].Count)
-              {Jars[editline].Count = newvalue;
+           { if(newvalue!=Products[editline].Count)
+              {Products[editline].Count = newvalue;
                GetTextForMenuLine(text, menu, editline);
                TFT_line_print(editline-scrollpos+1, text);
                TFT_line_blink(editline-scrollpos+1, true);
@@ -527,8 +523,8 @@ void ParameterMenu(int menu)
              }
            }
            else if (BigMenu[menu].line[editline].parmtype==SET_TRIPCOUNT)
-           { if(newvalue!=Jars[editline].TripCount)
-              {Jars[editline].TripCount = newvalue;
+           { if(newvalue!=Products[editline].TripCount)
+              {Products[editline].TripCount = newvalue;
                GetTextForMenuLine(text, menu, editline);
                TFT_line_print(editline-scrollpos+1, text);
                TFT_line_blink(editline-scrollpos+1, true);
@@ -541,6 +537,7 @@ void ParameterMenu(int menu)
              TFT_line_print(editline-scrollpos+1, text);
              TFT_line_blink(editline-scrollpos+1, true);
            }
+
            if(IsPulsed(&bEncoderButtonPulsed))  // pressed?
            { if(column==BigMenu[menu].columns) // time to leave
              { TFT_line_blink(editline-scrollpos+1, false);
@@ -574,7 +571,9 @@ void ParameterMenu(int menu)
              }
              else
              { column++; 
-               initRotaries(SW_MENU, Jars[editline].GlasTyp, 0, 5, 1); // 5 different jar styles
+               initRotaries(SW_MENU, Products[editline].GlasTyp, 0, 5, 1); // 5 different jar styles
+               TFT_line_print(5, "Please Select Jar Type");
+
              }
            }
          }
@@ -617,8 +616,7 @@ void GetTextForMenuLine(char* text, int menu, int line)
   
   switch(BigMenu[menu].line[line].parmtype)
   { case SET_JAR_PRESET:
-      sprintf(text, "%dg - %s", Jars[line].Gewicht, JarTypes[Jars[line].GlasTyp].name);
-      
+      sprintf(text, "%dg - %s", Products[line].Gewicht, JarTypes[Products[line].GlasTyp].name);
       break;
     case SET_ON_OFF:
       sprintf(text, "%s %s", BigMenu[menu].line[line].name, (SysParams[BigMenu[menu].line[line].targetidx]==0) ? "Off" : "On");
@@ -638,21 +636,25 @@ void GetTextForMenuLine(char* text, int menu, int line)
     case SET_CURRENT:
       sprintf(text, "%smA", BigMenu[menu].line[line].name, targetvalue);
       break;
-    case SET_CLICK:  
     case SET_LANGUAGE:
+    case RESETPREFS:
+    case RESETEEPROM:
       sprintf(text, "%s", BigMenu[menu].line[line].name);
       break;
     case SET_TARRA:
       sprintf(text, "%s %dg", JarTypes[line].name, JarTypes[line].tarra);
       break;
     case SET_TO_ZERO:
-      sprintf(text, "%dg %s %d", Jars[line].Gewicht, JarTypes[Jars[line].GlasTyp].name, Jars[line].Count);
+      sprintf(text, "%dg %s %d", Products[line].Gewicht, JarTypes[Products[line].GlasTyp].name, Products[line].Count);
       break;
     case SET_TRIPCOUNT:
-      sprintf(text, "%d-%s %d", Jars[line].Gewicht, JarTypes[Jars[line].GlasTyp].name, Jars[line].TripCount);
+      sprintf(text, "%d-%s %d", Products[line].Gewicht, JarTypes[Products[line].GlasTyp].name, Products[line].TripCount);
       break; 
+    case SET_GRAM_TOLERANCE:
+      sprintf(text, "%s ±%dg", BigMenu[menu].line[line].name, targetvalue);
       break;
     default:
+      sprintf(text, "%s", BigMenu[menu].line[line].name);
       break;
   }
 }
@@ -668,6 +670,10 @@ void SetDefaultParameters(void)
   }
   SysParams[LANGUAGE] = 0; // default is English
   SysParams[MANUALTARRA] = 25;
+  SysParams[AUTO_JAR_TOLERANCE]=20; // 20 gram tolerance on empty jar
+  SysParams[AUTO_CORRECTION]=1;
+  
+//  CalibrationFactor = 0; // assume not calibrated
 }
 
 void SaveParameters(void)
@@ -676,7 +682,7 @@ void SaveParameters(void)
   int n;
   Serial.println("Parameter Saving");
   preferences.begin("EEPROM", false);
-  for(parameteridx=AUTO_START; parameteridx<LASTPARAMETER;parameteridx++)
+  for(parameteridx=AUTOSTART; parameteridx<LASTPARAMETER;parameteridx++)
   { sprintf(label, "%d", parameteridx);
     if( SysParams[parameteridx] != preferences.getUInt(label, -12345)) // check if new value
     { preferences.putUInt(label, SysParams[parameteridx]);
@@ -688,26 +694,30 @@ void SaveParameters(void)
     }
   }
 
+  // save other settings if need be
+  if(CalibrationFactor != preferences.getFloat("calfaktor", 0))preferences.putFloat("calfaktor", CalibrationFactor);
+  if(rawtareoffset !=  preferences.getUInt("rawtareoffset", 0))preferences.putUInt("rawtareoffset", rawtareoffset);
+
   for(n=0;n<6;n++)
   { sprintf(label, "jar%d-gewicht", n);
-    if(Jars[n].Gewicht != preferences.getUInt(label, -12345))
-    { preferences.putUInt(label, Jars[n].Gewicht);
+    if(Products[n].Gewicht != preferences.getUInt(label, -12345))
+    { preferences.putUInt(label, Products[n].Gewicht);
     }
     sprintf(label, "jar%d-glastyp", n);
-    if(Jars[n].GlasTyp != preferences.getUInt(label, -12345))
-    { preferences.putUInt(label, Jars[n].GlasTyp);
+    if(Products[n].GlasTyp != preferences.getUInt(label, -12345))
+    { preferences.putUInt(label, Products[n].GlasTyp);
     }
     sprintf(label, "jar%d-tara", n);
     if(JarTypes[n].tarra != preferences.getUInt(label, -12345))
     { preferences.putUInt(label, JarTypes[n].tarra);
     }
     sprintf(label, "jar%d-tripcount", n);
-    if(Jars[n].TripCount != preferences.getUInt(label, -12345))
-    { preferences.putUInt(label, Jars[n].TripCount);
+    if(Products[n].TripCount != preferences.getUInt(label, -12345))
+    { preferences.putUInt(label, Products[n].TripCount);
     }
     sprintf(label, "jar%d-count", n);
-    if(Jars[n].Count != preferences.getUInt(label, -12345))
-    { preferences.putUInt(label, Jars[n].Count);
+    if(Products[n].Count != preferences.getUInt(label, -12345))
+    { preferences.putUInt(label, Products[n].Count);
     }
   }
   preferences.end();
@@ -720,7 +730,7 @@ void LoadParameters(void)
   int n;
   Serial.println("Parameter loading");
   preferences.begin("EEPROM", false);
-  for(parameteridx=AUTO_START; parameteridx<LASTPARAMETER;parameteridx++)
+  for(parameteridx=AUTOSTART; parameteridx<LASTPARAMETER;parameteridx++)
   { sprintf(label, "%d", parameteridx);
     val = preferences.getUInt(label, -12345); // see if we have that
     if(val != -12345)
@@ -732,10 +742,14 @@ void LoadParameters(void)
     }
   }
 
+  CalibrationFactor = preferences.getFloat("calfaktor", 0);
+  rawtareoffset = preferences.getUInt("rawtareoffset", 0);
+
+
     for(n=0;n<6;n++)
   { sprintf(label, "jar%d-gewicht", n);
     val = preferences.getUInt(label, -12345);
-    if(val != -12345)Jars[n].Gewicht = val;
+    if(val != -12345)Products[n].Gewicht = val;
     Serial.print("Parameter loaded - ");
     Serial.print(label);
     Serial.print(" = ");
@@ -743,7 +757,7 @@ void LoadParameters(void)
 
     sprintf(label, "jar%d-glastyp", n);
     val = preferences.getUInt(label, -12345);
-    if(val != -12345)Jars[n].GlasTyp = val;
+    if(val != -12345)Products[n].GlasTyp = val;
     Serial.print("Parameter loaded - ");
     Serial.print(label);
     Serial.print(" = ");
@@ -759,7 +773,7 @@ void LoadParameters(void)
 
     sprintf(label, "jar%d-tripcount", n);
     val = preferences.getUInt(label, -12345);
-    if(val != -12345)Jars[n].TripCount = val;
+    if(val != -12345)Products[n].TripCount = val;
     Serial.print("Parameter loaded - ");
     Serial.print(label);
     Serial.print(" = ");
@@ -767,7 +781,7 @@ void LoadParameters(void)
 
     sprintf(label, "jar%d-count", n);
     val = preferences.getUInt(label, -12345);
-    if(val != -12345)Jars[n].Count = val;
+    if(val != -12345)Products[n].Count = val;
     Serial.print("Parameter loaded - ");
     Serial.print(label);
     Serial.print(" = ");

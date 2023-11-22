@@ -21,6 +21,7 @@ int  ActLcdMode = 999;
 bool bPrintWeight = false;
 int  NewWeight = 0;
 int  OldWeight = -1234;
+extern bool bScaleStable;
 
 extern int CurrentMenu;
 extern int EditMenu;
@@ -360,6 +361,8 @@ void UpdateLCD(void)
   
   static int scrollpos = 0;
   static bool refreshdisplay = false;
+  static bool boldscalestable;
+
   int TextDatum;
 
   static unsigned long startMillis;
@@ -624,14 +627,16 @@ void UpdateLCD(void)
   }
   //Serial.println("En los2");
 
-  if(ActLcdMode == HANI_HAND || EditMenu == SETUP_CALIBRATE)
-  { if(OldWeight != NewWeight)
+  if(ActLcdMode == HANI_HAND || EditMenu == SETUP_CALIBRATE || ActLcdMode == HANI_AUTO)
+  { if((OldWeight != NewWeight) || (bScaleStable != boldscalestable))
     { OldWeight = NewWeight;
+      boldscalestable = bScaleStable;
       UseFont(Arialbd72);
       // print it 
-      sprintf(text, "  %d  ", NewWeight);
+      sprintf(text, "    %d    ", NewWeight);
       tft.setTextDatum(TC_DATUM);
-      tft.setTextColor(MyDisplay[1].textcolor, MyDisplay[1].canvascolor, true);
+      if(bScaleStable)tft.setTextColor(TFT_GREEN, MyDisplay[1].canvascolor, true);
+      else tft.setTextColor(TFT_RED, MyDisplay[1].canvascolor, true);
       tft.drawString(text, 320/2, 60);
       UseFont(Arialnarrow26);
     }  

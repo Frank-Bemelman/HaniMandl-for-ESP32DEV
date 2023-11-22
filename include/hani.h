@@ -81,8 +81,8 @@ struct JarType
   int tarra; // weight of empty jar
 };
 
-// Füllmengen für 5 verschiedene Gläser
-struct JarParameter { 
+// Füllmengen für 5 verschiedene Gläser 
+struct ProductParameter { 
   int Gewicht;
   int GlasTyp;
   int TripCount;
@@ -125,7 +125,7 @@ struct Menu
 // system parameters and settings are stored in array
 // indexes as follows
 #define NOT_USED 0
-#define AUTO_START 1
+#define AUTOSTART 1
 #define AUTO_JAR_TOLERANCE 2
 #define CORRECTION 3
 #define AUTO_CORRECTION 4
@@ -167,6 +167,7 @@ struct Menu
 #define SET_CLICK 11
 #define RESETPREFS 12
 #define RESETEEPROM 13
+#define SET_GRAM_TOLERANCE 14
 
 
 // language stuff, lot todo
@@ -182,3 +183,33 @@ struct Trans
 { int  index; // a define value such as LNG_SET_TARA_VAL
   char name[6][32]; // 6 translations of one text
 };
+
+// Denstrukturen für Rotary Encoder
+struct rotary {                        
+  int Value[3];
+  int Minimum;
+  int Maximum;
+  int Step;
+};
+
+#define SCALE_EMPTY 0
+#define SCALE_JAR_PLACED 1
+#define SCALE_WAIT_START 2
+#define SCALE_WAIT_RESUME 3
+#define SCALE_WILL_START 4
+#define SCALE_WILL_RESUME 5
+#define SCALE_JAR_FILL_FULL_SPEED 6
+#define SCALE_JAR_FILL_SLOW_SPEED 7
+#define SCALE_JAR_FILLING_PAUSED 8
+#define SCALE_JAR_FILLED 9
+
+#define WEIGHT_EMPTY_SCALE 0
+#define WEIGHT_EMPTY_JAR 1
+#define WEIGHT_FILLING_JAR 2
+#define WEIGHT_FULL_JAR 3
+
+#define DOSING_STOPPED 0
+#define DOSING_WAIT_START 1
+#define DOSING_FULL 2
+#define DOSING_FINE 3
+

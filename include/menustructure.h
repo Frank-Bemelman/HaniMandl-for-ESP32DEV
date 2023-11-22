@@ -1,9 +1,8 @@
-#define TARRAVALUE 0 
 
 Menu BigMenu[] = 
     { 
-        "1 - Set Tarra Values",     
-        "Set Your Tarra Values For Jars Used",     
+        "1 - Set Jar Type Tarras",     
+        "Set Your Tarra Values For Jar Types Used",     
         "List?", 10, 1000, 250, 1, JARARRAY, SET_TARRA,
         "List?", 10, 1000, 250, 0, JARARRAY, SET_TARRA,
         "List?", 10, 1000, 250, 0, JARARRAY, SET_TARRA, 
@@ -24,8 +23,8 @@ Menu BigMenu[] =
         "Bottom", 0,   // exit mode & columns
 
       
-       "3 - Net Weight Presets",
-       "Adjust The Netto Weight For Various Jars",
+       "3 - Net Weight Products",
+       "Adjust The Net Weight & Jar Type For Various Products",
         "netto & jartype", 0, 4500, 100, 1, JARARRAY, SET_JAR_PRESET, // also deals with JAR1_TYPE
         "netto & jartype", 0, 4500, 250, 0, JARARRAY, SET_JAR_PRESET, // also deals with JAR2_TYPE
         "netto & jartype", 0, 4500, 250, 0, JARARRAY, SET_JAR_PRESET, // also deals with JAR3_TYPE 
@@ -34,22 +33,22 @@ Menu BigMenu[] =
         "netto & jartype", 0, 4500, 500, 0, JARARRAY, SET_JAR_PRESET, // also deals with JAR6_TYPE
         "Exit", 2,   // exit mode & columns
 
-        "4 - Automatic",
+        "4 - Automatic Settings",
         "Set The Parameters For Automatic Filling",
-        "Auto Start", 0, 1, 1, 0, AUTO_START,  SET_ON_OFF,
-        "Jar Tolerance", 0, 100, 20, 0, AUTO_JAR_TOLERANCE,  SET_GRAMS, 
-        "Correction", 0, 100, 50, 0, CORRECTION, SET_GRAMS,
+        "Full Auto Start", 0, 1, 1, 0, AUTOSTART,  SET_ON_OFF,
+        "Jar Tolerance", 0, 100, 20, 0, AUTO_JAR_TOLERANCE, SET_GRAM_TOLERANCE, 
+        "Correction", 0, 100, 20, 0, CORRECTION, SET_GRAMS,
         "Auto Correction", 0, 1, 0, 0, AUTO_CORRECTION, SET_ON_OFF,
-        "Coulance", 0, 100, 20, 0, COULANCE, SET_GRAMS,
+        "Coulance", 0, 100, 7, 0, COULANCE, SET_GRAMS,
         "Last One", 0, 100, 50, 0, NOT_USED, SET_GRAMS, //COULANCE, 
         "Exit", 1,   // exit mode & columns
 
         "5 - Servo Adjustment",
         "Sets The Limits For Your Servo Valve",
         "Live Setup", 0, 1, 1, 1, LIVESETUP, SET_ON_OFF,
-        "Minimum", 0, 30, 50, 1, SERVOMIN, SET_DEGREES,
-        "Maximum", 150, 180, 170, 1, SERVOMAX, SET_DEGREES,
-        "Fine Dosage", 30, 150, 50, 1, SERVOFINEDOS, SET_DEGREES,
+        "Minimum", 0, 30, 5, 1, SERVOMIN, SET_DEGREES,
+        "Maximum", 150, 180, 85, 1, SERVOMAX, SET_DEGREES,
+        "Fine Dosage", 10, 150, 35, 1, SERVOFINEDOS, SET_DEGREES,
         "", 0, 100, 50, 1, NOT_USED, SET_DEGREES,
         "", 0, 100, 50, 1, NOT_USED, SET_DEGREES,
         "Exit", 1,   // exit mode & columns
@@ -96,12 +95,12 @@ Menu BigMenu[] =
        
         "10 - Default Reset",
         "Resets All Parameters To Standard Values",
-        "A", 0, 100, 50, 1, NOT_USED, SET_YES_NO,
-        "A", 0, 100, 50, 1, NOT_USED, SET_YES_NO,
-        "A", 0, 100, 50, 1, NOT_USED, SET_YES_NO,
-        "A", 0, 100, 50, 1, NOT_USED, SET_YES_NO,
-        "A", 0, 100, 50, 1, NOT_USED, SET_YES_NO,
-        "A", 0, 100, 50, 1, NOT_USED, SET_YES_NO,
+        "Factory Reset", 0, 0, 0, 1, RESETPREFS, RESETPREFS,
+        "Format Eeprom", 0, 0, 0, 1, RESETEEPROM, RESETEEPROM,
+        "", 0, 100, 50, 1, NOT_USED, SET_YES_NO,
+        "", 0, 100, 50, 1, NOT_USED, SET_YES_NO,
+        "", 0, 100, 50, 1, NOT_USED, SET_YES_NO,
+        "", 0, 100, 50, 1, NOT_USED, SET_YES_NO,
         "Exit", 1,   // exit mode & columns
 
         "11 - Set Language",

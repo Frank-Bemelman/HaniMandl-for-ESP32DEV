@@ -6,7 +6,7 @@ Changes are mostly cosmetic. Needs a 320x240 tft display, ST7789 model. Uses ant
 Use of graphic image as startup screen
 
 
-![alt text](pictures/IMG_1778.jpg)
+![alt text](pictures/IMG_1778.JPG)
 <br>
 
 If you want to use ILI9341 display, see platformio.ini for build flags, and change ST7789_DRIVER=1 to ILI9341_DRIVER=1 

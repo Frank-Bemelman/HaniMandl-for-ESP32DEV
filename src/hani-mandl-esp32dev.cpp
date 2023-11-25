@@ -20,7 +20,9 @@
 // Version
 String version = "V1.0 by F.";
 extern void SetupMyDisplay(void);
-extern void TFT_line_print(int line, const char *content);
+//extern void TFT_line_print(int line, const char *content);
+extern void TFT_line_print(int line, const char *content, bool blink = false);
+
 extern void TFT_line_color(int line, int textcolor, int backgroundcolor);
 extern void TFT_line_blink(int line, bool blink);  
 extern void SetupButtons(void);
@@ -34,7 +36,8 @@ extern bool bUpdateDisplay;
 extern bool bBlinkDisplay;
 extern int  BlinkTimer10mS;
 extern int  Unstable10mS;
-
+int BeepTimes = 0;
+int BeepLength = 100;   
 extern int NewHaniDisplayMode;
 extern int ActLcdMode;
 extern int NewWeight;
@@ -168,7 +171,6 @@ int tara;                           // Tara für das ausgewählte Glas, für Aut
 int tara_glas;                      // Tara für das aktuelle Glas, falls Glasgewicht abweicht
 long rawtareoffset;                  // Gewicht der leeren Waage
 int fmenge;                         // ausgewählte Füllmenge
-int fmenge_index;                   // Index in gläser[]
 int winkel;                         // aktueller Servo-Winkel
 float fein_dosier_gewicht = 60;     // float wegen Berechnung des Schliesswinkels
 int servo_aktiv = 0;                // Servo aktivieren ja/nein
@@ -178,14 +180,11 @@ int modus = -1;                     // Bei Modus-Wechsel den Servo auf Minimum f
 int auto_aktiv = 0;                 // Für Automatikmodus - System ein/aus?
 int waage_vorhanden = 0;            // HX711 nicht ansprechen, wenn keine Waage angeschlossen ist, sonst Crash
 long preferences_chksum;            // Checksumme, damit wir nicht sinnlos Prefs schreiben
-int buzzermode = 0;                 // 0 = aus, 1 = ein.
-int ledmode = 0;                    // 0 = aus, 1 = ein.
 bool gezaehlt = true;               // Kud Zähl-Flag
 int MenuepunkteAnzahl;              // Anzahl Menüpunkte im Setupmenü
 int lastpos = 0;                    // Letzte position im Setupmenü
 int progressbar = 0;                // Variable für den Progressbar
 bool bINA219_installed = false;     
-int current_servo = 0;              // 0 = INA219 wird ignoriert, 1-1000 = erlaubter Maximalstrom vom Servo in mA
 int current_mA;                     // Strom welcher der Servo zieht
 int updatetime_ina219 = 500;        // Zeit in ms in welchem der INA219 gelesen wird (500 -> alle 0,5 sek wird eine Strommessung vorgenommen)
 int last_ina219_measurement = 0;    // Letzte Zeit in welcher der Strom gemessen wurde
@@ -195,8 +194,6 @@ int alarm_overcurrent = 0;          // Alarmflag wen der Servo zuwiel Strom zieh
 int show_current = 0;               // 0 = aus, 1 = ein / Zeige den Strom an auch wenn der INA ignoriert wird
 int inawatchdog = 1;                // 0 = aus, 1 = ein / wird benötigt um INA messung auszusetzen
 int offset_winkel = 0;              // Offset in Grad vom Schlieswinkel wen der Servo Überstrom hatte (max +3Grad vom eingestelten Winkel min)
-int color_marker_idx = 4;           // Farbe für den Marker für das TFT Display
-bool bOldMenu = false;               // use old rolling menu
 
 //Variablen für TFT update
 bool no_ina;
@@ -232,9 +229,7 @@ int GetCurrent(int count);
 int step2weight(int step);
 int StringLenght(String a);
 void ina219_measurement(void);
-void buzzer(byte type);
-void print_credits(void);
-void print_logo(void);
+void buzzer(int type);
 
 void tft_colors() {
     COLOR_BACKGROUND  = TFT_BLACK;
@@ -243,21 +238,6 @@ void tft_colors() {
     COLOR_MENU_POS2   = 0x5AEC;
     COLOR_MENU_POS3   = 0x39C8;
     COLOR_MENU_POS4   = 0x20E6;
-}
-
-void tft_marker() {                
-  if (color_marker_idx == 0)                              {COLOR_MARKER = 0x05ff;}
-  else if (color_marker_idx == 1)                         {COLOR_MARKER = 0x021f;}
-  else if (color_marker_idx == 2)                         {COLOR_MARKER = 0x001f;}
-  else if (color_marker_idx == 3)                         {COLOR_MARKER = 0x4851;}
-  else if (color_marker_idx == 4)                         {COLOR_MARKER = 0xc050;}
-  else if (color_marker_idx == 5)                         {COLOR_MARKER = 0xf800;}
-  else if (color_marker_idx == 6)                         {COLOR_MARKER = 0xfbc0;}
-  else if (color_marker_idx == 7)                         {COLOR_MARKER = 0xfde0;}
-  else if (color_marker_idx == 8)                         {COLOR_MARKER = 0xd6e1;}
-  else if (color_marker_idx == 9)                         {COLOR_MARKER = 0xffe0;}
-  else if (color_marker_idx == 10)                        {COLOR_MARKER = 0x2724;}
-  else if (color_marker_idx == 11)                        {COLOR_MARKER = 0x0da1;}
 }
 
 // Rotary Taster. Der Interrupt kommt nur im Automatikmodus zum Tragen und nur wenn der Servo inaktiv ist.
@@ -273,9 +253,6 @@ void IRAM_ATTR isr1() {
       if (rotary_select == SW_KORREKTUR or rotary_select - 1 == SW_KORREKTUR) {
         rotary_select_alt = SW_KORREKTUR;
         korr_alt = -99999;
-      }
-      if (rotary_select == SW_MENU or rotary_select + 2 == SW_MENU) {
-        glas_alt = -1;
       }
       #ifdef isDebug
         Serial.print("Rotary Button changed to ");
@@ -361,15 +338,9 @@ boolean EncoderButtonPressed(void)
 void getPreferences(void) {
   preferences.begin("EEPROM", false);                     // Parameter aus dem EEPROM lesen
   pos             = preferences.getUInt("pos", 0);
-  fmenge_index    = preferences.getUInt("fmenge_index", 3);
-  buzzermode      = preferences.getUInt("buzzermode", buzzermode);
-  ledmode         = preferences.getUInt("ledmode", ledmode);
   kali_gewicht    = preferences.getUInt("kali_gewicht", kali_gewicht);
-  current_servo   = preferences.getUInt("current_servo", current_servo);
   show_current    = preferences.getUInt("show_current", show_current);
-  color_marker_idx    = preferences.getUInt("clr_marker_idx", color_marker_idx);
-  preferences_chksum = pos + fmenge_index +
-                       buzzermode + ledmode +  kali_gewicht + current_servo + show_current + color_marker_idx;
+  preferences_chksum = pos +  kali_gewicht + show_current;
 
                         
 
@@ -397,31 +368,6 @@ void getPreferences(void) {
     i++;
   }
   preferences.end();
-  #ifdef isDebug
-    Serial.println("get Preferences:");
-    Serial.print("pos = ");             Serial.println(pos);
-    Serial.print("fmenge_index = ");    Serial.println(fmenge_index);
-    Serial.print("buzzermode = ");      Serial.println(buzzermode);
-    Serial.print("ledmode = ");         Serial.println(ledmode);
-    Serial.print("current_servo = ");   Serial.println(current_servo);
-    Serial.print("kali_gewicht = ");    Serial.println(kali_gewicht);
-    Serial.print("show_current = ");    Serial.println(show_current);
-    i = 0;
-    while( i < 5 ) {
-      sprintf(ausgabe, "Gewicht%d = ", i);
-      Serial.print(ausgabe);         
-      Serial.println(Products[i].Gewicht);
-      sprintf(ausgabe, "GlasTyp%d = ", i);
-      Serial.print(ausgabe);         
-      Serial.println(JarTypes[Products[i].GlasTyp].shortname);
-      sprintf(ausgabe, "Tara%d = ", i);
-      Serial.print(ausgabe);         
-      Serial.println(Products[i]JarTypes);
-      i++;
-    }
-    Serial.print("Checksumme:");    
-    Serial.println(preferences_chksum);    
-  #endif
 }
 
 void setPreferences(void) {
@@ -447,18 +393,9 @@ void setPreferences(void) {
     if (Products[i].Count != preferences.getInt(ausgabe, 0)) {
       preferences.putInt(ausgabe, Products[i].Count);
     }
-    #ifdef isDebug
-      Serial.print("Counter gespeichert: Index ");
-      Serial.print(i);
-      Serial.print(" Trip ");
-      Serial.print(Products[fmenge_index].TripCount);
-      Serial.print(" Gesamt ");
-      Serial.println(Products[fmenge_index].Count);      
-    #endif
   }
   // Den Rest machen wir gesammelt, das ist eher statisch
-  preferences_newchksum = pos + fmenge_index + 
-                        buzzermode + ledmode + kali_gewicht + current_servo + show_current + color_marker_idx;
+  preferences_newchksum = pos + kali_gewicht + show_current;
 
 
   i = 0;
@@ -475,13 +412,8 @@ void setPreferences(void) {
     return;
   }
   preferences_chksum = preferences_newchksum;
-  preferences.putUInt("fmenge_index", fmenge_index);
-  preferences.putUInt("buzzermode", buzzermode);
-  preferences.putUInt("ledmode", ledmode);
   preferences.putUInt("kali_gewicht", kali_gewicht);
-  preferences.putUInt("current_servo", current_servo);
   preferences.putUInt("show_current", show_current);
-  preferences.putUInt("clr_marker_idx", color_marker_idx);
   i = 0;
   while( i < 5 ) {
     sprintf(ausgabe, "Gewicht%d", i);
@@ -493,430 +425,11 @@ void setPreferences(void) {
     i++;
   }
   preferences.end();
-  #ifdef isDebug
-    Serial.println("Set Preferences:");
-    Serial.print("pos = ");             Serial.println(winkel);
-    Serial.print("fmenge_index = ");    Serial.println(fmenge_index);
-    Serial.print("buzzermode = ");      Serial.println(buzzermode);
-    Serial.print("ledmode = ");         Serial.println(ledmode);
-    Serial.print("current_servo = ");   Serial.println(current_servo);
-    Serial.print("kali_gewicht = ");    Serial.println(kali_gewicht);
-    Serial.print("show_current = ");    Serial.println(show_current);
-    i = 0;
-    while( i < 5 ) {
-      sprintf(ausgabe, "Gewicht%d = ", i);
-      Serial.print(ausgabe);         Serial.println(Products[i].Gewicht);
-      sprintf(ausgabe, "GlasTyp%d = ", i);
-      Serial.print(ausgabe);         Serial.println(JarTypes[Products[i].GlasTyp].shortname);
-      sprintf(ausgabe, "Tara%d = ", i);
-      Serial.print(ausgabe);         Serial.println(JarTypes[i].tarra);
-      i++;
-    }
-  #endif
 }
 
 
 
-void setupINA219(void) {                            //Funktioniert nur wenn beide Menüs die gleiche Anzahl haben. Feel free to change it :-)
-  int menuitem;
-  int lastcurrent             = current_servo;
-  int lastwinkel_min          = SysParams[SERVOMIN];
-  int lastshow_current        = show_current;
-  bool wert_aendern = false;
-  int menuitem_used           = 2;
-  String kalibration_status   = "Start";
-  String quetschhan           = "zu";
-  bool cal_done = false;
-  int cal_winkel = 0;
-  int j=0;
-  int k = 0;
-  int y_offset_tft = 28;
-  bool change = false;
-  int wert_old = -1;
-  const char title[] = "INA219 Setup";
-  int MenuepunkteAnzahl = 3;
-  const char *menuepunkte_1[MenuepunkteAnzahl] = {"Servo Strom", "Cal. Quetschhan", "Speichern"};
-  const char *menuepunkte_2[MenuepunkteAnzahl] = {"Servo Strom", "Zeige Strom an", "Speichern"};
-  gfx->fillScreen(COLOR_BACKGROUND);
-  gfx->setTextColor(COLOR_TEXT);
-  gfx->setFont(Punk_Mono_Bold_240_150);
-  int x_pos = CenterPosX(title, 14, 320);
-  gfx->setCursor(x_pos, 25);
-  gfx->println(title);
-  gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
-  initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
-  i = 1;
-  while (i > 0) {
-    if (digitalRead(BUTTON_STOP) == HIGH  or digitalRead(SWITCH_SETUP) == LOW) {
-      while (digitalRead(BUTTON_STOP) == HIGH);
-      current_servo = lastcurrent;
-      SysParams[SERVOMIN] = lastwinkel_min;
-      show_current = lastshow_current;
-      modus = -1;
-      return;
-    }
-    if (wert_aendern == false) {
-      menuitem = getRotariesValue(SW_MENU);
-      pos = menuitem;
-      if (menuitem == menuitem_used) {
-        menuitem = 6;
-      }
-    }
-    else {
-      switch (menuitem) {
-        case 0: current_servo         = getRotariesValue(SW_MENU);
-                break;
-        case 1: if (current_servo == 0) {
-                  show_current = getRotariesValue(SW_MENU);
-                }
-                else {
-                  j                     = 1;
-                  kalibration_status    = "Start";
-                  wert_aendern          = false;
-                  menuitem_used         = 1;
-                  setRotariesValue(SW_MENU, 0);
-                  initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
-                }
-                break;
-      }
-    }
-    // Menu
-    int a = 0;
-    while(a < MenuepunkteAnzahl) {
-      gfx->setTextColor(COLOR_TEXT);
-      if (a == pos and wert_aendern == false) {
-        gfx->setTextColor(COLOR_MARKER);
-      }
-      if (a < MenuepunkteAnzahl - 1) {
-        if (current_servo == 0) {
-          gfx->setCursor(5, 30+((a+1) * y_offset_tft));
-          gfx->print(menuepunkte_2[a]);
-        }
-        else {
-          gfx->setCursor(5, 30+((a+1) * y_offset_tft));
-          gfx->print(menuepunkte_1[a]);
-        }
-        if (a == pos and wert_aendern == true) {
-          gfx->setTextColor(COLOR_MARKER);
-        }
-        switch (a) {
-          case 0: sprintf(ausgabe,"%dmA", current_servo);
-                  if (wert_old != current_servo and wert_aendern == true and a == pos) {
-                    change = true;
-                    wert_old = current_servo;
-                  }
-                  break;
-          case 1: if (current_servo == 0) {
-                    sprintf(ausgabe,"%s", show_current==false?"aus":"ein");
-                    if (wert_old != show_current and wert_aendern == true and a == pos) {
-                      change = true;
-                      wert_old = show_current;
-                    }
-                  }
-                  else {
-                    sprintf(ausgabe,"%s", "");
-                    if (wert_old != show_current and wert_aendern == true and a == pos) {
-                      change = true;
-                      wert_old = show_current;
-                    }
-                  }
-                  break;
-        }
-        if (change) {
-          if (a == 0) {
-            gfx->fillRect(215, 27+((a+1) * y_offset_tft)-19, 100, 25, COLOR_BACKGROUND);
-            if (wert_old == 0 or wert_old == 50) {                                                //nicht ganz sauber bei den Schwellwerten. 
-              gfx->fillRect(0, 27+((a+2) * y_offset_tft)-19, 320, 27, COLOR_BACKGROUND);
-            }
-          }
-          else {
-            gfx->fillRect(251, 27+((a+1) * y_offset_tft)-19, 64, 25, COLOR_BACKGROUND);
-          }
-          change = false;
-        }
-        int y = get_length(ausgabe);
-        gfx->setCursor(320 - y * 14 - 5, 30+((a+1) * y_offset_tft));
-        gfx->print(ausgabe);
-      }
-      else {
-        gfx->setCursor(5, 30+(7 * y_offset_tft));
-        gfx->print(menuepunkte_2[a]);
-      }
-      a++;
-    }
-    if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == false) {
-      while(EncoderButtonPressed());
-      switch (menuitem) { 
-        case 0: initRotaries(SW_MENU, current_servo, 0, 1500, 50);
-                break;
-        case 1: if (current_servo == 0) {initRotaries(SW_MENU, show_current, 0, 1, 1);}
-                break;
-      }
-      wert_aendern = true;
-    }
-    // Änderung im Menupunkt übernehmen
-    if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == true) {
-      while(EncoderButtonPressed());
-      initRotaries(SW_MENU, menuitem, 0, menuitem_used, -1);
-      wert_aendern = false;
-    }
-    // Menu verlassen 
-    if (EncoderButtonPressed() && menuitem == 6) {
-      while(EncoderButtonPressed());
-      gfx->setCursor(283, 30+(7 * y_offset_tft));
-      gfx->print("OK");
-      delay(1000);
-      modus = -1;
-      i = 0;
-    }
-    while (j > 0) {
-      if (digitalRead(SWITCH_SETUP) == LOW) {
-        current_servo = lastcurrent;
-        show_current = lastshow_current;
-        modus = -1;
-        return;
-      }
-      if (wert_aendern == false) {
-        menuitem = getRotariesValue(SW_MENU);
-        if (menuitem == menuitem_used) {
-          menuitem = 6;
-        }
-      }
-      menuitem_used = 1;
-      if (j == 1) {
-        gfx->fillScreen(COLOR_BACKGROUND);
-        gfx->setTextColor(COLOR_TEXT);
-        gfx->setFont(Punk_Mono_Bold_240_150);
-        x_pos = CenterPosX(title, 14, 320);
-        gfx->setCursor(x_pos, 25);
-        gfx->println(title);
-        gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
-        gfx->setCursor(5, 30+(3 * y_offset_tft));
-        sprintf(ausgabe,"max. Strom:     %4imA", current_servo - 30);
-        gfx->print(ausgabe);
-        gfx->setCursor(5, 30+(4 * y_offset_tft));
-        sprintf(ausgabe,"min. Winkel:      %3i°", SysParams[SERVOMIN]);
-        gfx->print(ausgabe);
-        j++;
-      }
-      if (wert_aendern == false && menuitem < menuitem_used && kalibration_status == "Start") {
-        gfx->setTextColor(COLOR_MARKER);
-        gfx->setCursor(5, 30+(1 * y_offset_tft));
-        gfx->print(kalibration_status);
-        gfx->setTextColor(COLOR_TEXT);
-        gfx->setCursor(5, 30+(7 * y_offset_tft));
-        gfx->print("Zurück");
-      }
-      else {
-        gfx->setTextColor(COLOR_TEXT);
-        gfx->setCursor(5, 30+(1 * y_offset_tft));
-        gfx->print(kalibration_status);
-        gfx->setTextColor(COLOR_MARKER);
-        gfx->setCursor(5, 30+(7 * y_offset_tft));
-        gfx->print("Zurück");
-      }
-      if (wert_aendern == true && menuitem < menuitem_used) {
-        lastcurrent = current_servo;
-        kalibration_status = "Kalibration läuft";
-        quetschhan = "zu";
-        cal_done = false;
-        cal_winkel = 0;
-        k = 1;
-      }
-      if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == false) {
-        while(EncoderButtonPressed());
-        wert_aendern = true;
-      }
-      // Änderung im Menupunkt übernehmen
-      if (EncoderButtonPressed() && menuitem < menuitem_used  && wert_aendern == true) {
-        while(EncoderButtonPressed());
-        initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
-        wert_aendern = false;
-      }
-      //verlassen
-      if ((EncoderButtonPressed() && menuitem == 6) or digitalRead(BUTTON_STOP) == HIGH) {
-        while(EncoderButtonPressed() or digitalRead(BUTTON_STOP) == HIGH);
-        gfx->fillScreen(COLOR_BACKGROUND);
-        x_pos = CenterPosX(title, 14, 320);
-        gfx->setCursor(x_pos, 25);
-        gfx->println(title);
-        gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
-        wert_aendern = false;
-        menuitem_used = 2;
-        initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
-      }
-      while (k > 0) {
-        SERVO_WRITE(90);
-        quetschhan = "offen";
-        int scaletime = millis();
-        bool measurement_run = false;
-        while (!cal_done) {
-          if (k == 1) {
-            gfx->fillScreen(COLOR_BACKGROUND);
-            gfx->setTextColor(COLOR_TEXT);
-            gfx->setFont(Punk_Mono_Bold_240_150);
-            x_pos = CenterPosX(title, 14, 320);
-            gfx->setCursor(x_pos, 25);
-            gfx->println(title);
-            gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
-            gfx->setCursor(5, 30+(3 * y_offset_tft));
-            change = true;
-            k++;
-          }
-          if (change) {
-            gfx->setTextColor(COLOR_TEXT);
-            gfx->setCursor(5, 30+(1 * y_offset_tft));
-            gfx->print(kalibration_status);
-            gfx->fillRect(205, 27+(3 * y_offset_tft)-19, 110, 3 * y_offset_tft, COLOR_BACKGROUND);
-            gfx->setCursor(5, 30+(3 * y_offset_tft));
-            sprintf(ausgabe,"Strom:          %4imA", current_mA);
-            gfx->print(ausgabe);
-            gfx->setCursor(5, 30+(4 * y_offset_tft));
-            sprintf(ausgabe,"Winkel:           %3i°", cal_winkel);
-            gfx->print(ausgabe);
-            gfx->setCursor(5, 30+(5 * y_offset_tft));
-            sprintf(ausgabe,"Quetschhan:      %5s", quetschhan);
-            gfx->print(ausgabe);
-            gfx->setTextColor(COLOR_MARKER);
-            gfx->setCursor(5, 30+(7 * y_offset_tft));
-            gfx->print("Abbrechen");
-            change = false;
-          }
-          if (millis() - scaletime >= 800 and !measurement_run) {
-            SERVO_WRITE(cal_winkel);
-            quetschhan = "zu";
-            measurement_run = true;
-            scaletime = millis();
-            change = true;
-          }
-          else if (millis() - scaletime >= 800 and measurement_run) {
-            current_mA = GetCurrent(50);
-            if (current_mA > current_servo - 30) {   //30mA unter dem max. Wert Kalibrieren
-              SERVO_WRITE(90);
-              quetschhan = "offen";
-              cal_winkel++;
-              change = true;
-            }
-            else {
-              cal_done = true;
-              kalibration_status = "Kalibration beendet";
-              SysParams[SERVOMIN] = cal_winkel;
-              k++;
-            }
-            measurement_run = false;
-            scaletime = millis();
-          }
-          //verlassen
-          if (EncoderButtonPressed() or digitalRead(BUTTON_STOP) == HIGH) {
-            while(EncoderButtonPressed() or digitalRead(BUTTON_STOP) == HIGH);
-            gfx->fillScreen(COLOR_BACKGROUND);
-            gfx->setTextColor(COLOR_TEXT);
-            x_pos = CenterPosX(title, 14, 320);
-            gfx->setCursor(x_pos, 25);
-            gfx->println(title);
-            gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
-            k = 0;
-            SysParams[SERVOMIN] = lastwinkel_min;
-            cal_done = true;
-            wert_aendern = false;
-            menuitem_used = 2;
-            initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
-          }
-        }
-        while (cal_done and k > 1) {
-          current_mA = GetCurrent(50);
-          if (wert_old != current_mA) {
-            change = true;
-            wert_old = current_mA;
-          }
-          if (k==2) {
-            gfx->setTextColor(COLOR_TEXT);
-            gfx->fillRect(0, 27+(1 * y_offset_tft)-19, 320, 25, COLOR_BACKGROUND);
-            gfx->fillRect(0, 27+(5 * y_offset_tft)-19, 320, 25, COLOR_BACKGROUND);
-            gfx->fillRect(0, 27+(7 * y_offset_tft)-19, 320, 25, COLOR_BACKGROUND);
-            gfx->setCursor(5, 30+(1 * y_offset_tft));
-            gfx->print(kalibration_status);
-            gfx->setTextColor(COLOR_MARKER);
-            gfx->setCursor(5, 30+(7 * y_offset_tft));
-            gfx->print("Speichern");
-            gfx->setTextColor(COLOR_TEXT);
-            k++;
-          }
-          if (change) {
-            gfx->fillRect(200, 27+(3 * y_offset_tft)-19, 120, 25, COLOR_BACKGROUND);
-            gfx->setCursor(5, 30+(3 * y_offset_tft));
-            sprintf(ausgabe,"Strom:          %4imA", current_mA);
-            gfx->print(ausgabe);
-            change = false;
-          }
-          //verlassen
-          if (digitalRead(BUTTON_STOP) == HIGH) {
-            while(digitalRead(BUTTON_STOP) == HIGH);
-            k = 0;
-            wert_aendern = false;
-            menuitem_used = 2;
-            SysParams[SERVOMIN] = lastwinkel_min;
-            initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
-            gfx->fillScreen(COLOR_BACKGROUND);
-            x_pos = CenterPosX(title, 14, 320);
-            gfx->setCursor(x_pos, 25);
-            gfx->println(title);
-            gfx->drawLine(0, 30, 320, 30, COLOR_TEXT);
-          }
-          if (EncoderButtonTapped()) {
-            k = 0;
-            modus = -1;
-            wert_aendern = false;
-            menuitem_used = 2;
-            initRotaries(SW_MENU, 0, 0, menuitem_used, -1);
-            setPreferences();
-            return;
-          }
-        }
-      }
-    }
-  }
-}
 
-void processSetup(void) {
-  int x_pos;
-  int menuitem_old = -1;
-  int menuitem = 1;
-
-  modus = MODE_SETUP;
-  winkel = SysParams[SERVOMIN];          // Hahn schliessen
-  servo_aktiv = 0;              // Servo-Betrieb aus
-  SERVO_WRITE(winkel);
-
-  while (modus == MODE_SETUP and (digitalRead(SWITCH_SETUP)) == HIGH) {
-  
-  if(start_button_very_long_pressed > 200)
-  { // pressed for > 4 seconds
-     start_button_very_long_pressed = 0;
-     bOldMenu = ! bOldMenu;
-     break; // out of here
-  }   
-
-
-
-    if (menuitem != menuitem_old) {
-      gfx->fillScreen(COLOR_BACKGROUND);
-      gfx->drawLine(0, 100, 320, 100, COLOR_TEXT);
-      gfx->drawLine(0, 139, 320, 139, COLOR_TEXT);
-      gfx->setTextColor(COLOR_TEXT);
-      gfx->setFont(Punk_Mono_Bold_320_200);
-      x_pos = CenterPosX("INA219 Setup", 18, 320);
-      gfx->setCursor(x_pos, 130);
-      gfx->println("INA219 Setup");
-      menuitem_old = menuitem;
-    }
-
-    if (EncoderButtonTapped()) {
-      setupINA219();            // INA219 Setup
-      setPreferences();
-    }
-  }
-}
 
 void processAutomatik(void) {
   int zielgewicht;                 // Glas + Korrektur
@@ -936,10 +449,10 @@ void processAutomatik(void) {
      tara_glas = 0;
      rotary_select = SW_WINKEL;    // Einstellung für Winkel über Rotary
      offset_winkel = 0;            // Offset vom Winkel wird auf 0 gestellt
-     initRotaries(SW_MENU, fmenge_index, 0, 4, 1);
-     gewicht_vorher = Products[fmenge_index].Gewicht + SysParams[CORRECTION];
+     initRotaries(SW_MENU, SysParams[CHOSENPRODUCT], 0, 5, 1);
+     gewicht_vorher = Products[SysParams[CHOSENPRODUCT]].Gewicht + SysParams[CORRECTION];
      int x_pos;
-    if (current_servo > 0) {
+    if (SysParams[SERVOMAXCURRENT] > 0) {
       no_ina = true;
     }
     else {
@@ -1026,9 +539,9 @@ void processAutomatik(void) {
     setRotariesValue(SW_WINKEL, pos);
   }
   SysParams[CORRECTION]    = getRotariesValue(SW_KORREKTUR);
-  fmenge_index = getRotariesValue(SW_MENU);
-  fmenge       = Products[fmenge_index].Gewicht;
-  tara         = JarTypes[fmenge_index].tarra;
+  SysParams[CHOSENPRODUCT] = getRotariesValue(SW_MENU);
+  fmenge       = Products[SysParams[CHOSENPRODUCT]].Gewicht;
+  tara         = JarTypes[SysParams[CHOSENPRODUCT]].tarra;
   if (tara <= 0) { 
     auto_aktiv = 0;
   }
@@ -1094,7 +607,7 @@ void processAutomatik(void) {
     gfx->setCursor(2, 176);
     gfx->fillRect(0, 156, 320, 27, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Thin_240_150);
-    sprintf(ausgabe, "%dg ", (Products[fmenge_index].Gewicht));
+    sprintf(ausgabe, "%dg ", (Products[SysParams[CHOSENPRODUCT]].Gewicht));
     gfx->print(ausgabe);
     gfx->setFont(Punk_Mono_Thin_120_075);
     gfx->setCursor(2 + 14*StringLenght(ausgabe), 168);
@@ -1155,8 +668,8 @@ void processAutomatik(void) {
         sammler_num++;                                      // Korrekturwert für diesen Durchlauf erreicht
       }
       if (voll == true && gezaehlt == false) {
-        Products[fmenge_index].TripCount++;
-        Products[fmenge_index].Count++;
+        Products[SysParams[CHOSENPRODUCT]].TripCount++;
+        Products[SysParams[CHOSENPRODUCT]].Count++;
         gezaehlt = true;
       }
       #ifdef isDebug
@@ -1165,8 +678,8 @@ void processAutomatik(void) {
         Serial.print(" gewicht_vorher: "); Serial.print(gewicht_vorher);
         Serial.print(" sammler_num: ");    Serial.print(sammler_num);
         Serial.print(" Korrektur: ");      Serial.println(autokorrektur_gr);
-        Serial.print(" Zähler Trip: ");    Serial.print(Products[fmenge_index].TripCount); //Kud
-        Serial.print(" Zähler: ");         Serial.println(Products[fmenge_index].Count); //Kud
+        Serial.print(" Zähler Trip: ");    Serial.print(Products[SysParams[CHOSENPRODUCT]].TripCount); //Kud
+        Serial.print(" Zähler: ");         Serial.println(Products[SysParams[CHOSENPRODUCT]].Count); //Kud
       #endif
     }
   }
@@ -1191,8 +704,8 @@ void processAutomatik(void) {
     winkel      = SysParams[SERVOMIN] + offset_winkel;
     servo_aktiv = 0;
     if (gezaehlt == false) {
-      Products[fmenge_index].TripCount++;
-      Products[fmenge_index].Count++;
+      Products[SysParams[CHOSENPRODUCT]].TripCount++;
+      Products[SysParams[CHOSENPRODUCT]].Count++;
       gezaehlt = true;
     }
     if (SysParams[AUTOSTART] != 1)       // autostart ist nicht aktiv, kein weiterer Start
@@ -1218,15 +731,15 @@ void processAutomatik(void) {
       Serial.print(" auto_aktiv ");      Serial.println(auto_aktiv);
     #endif 
   #endif
-  if (bINA219_installed && (current_servo > 0 or show_current == 1)) {
+  if (bINA219_installed && (SysParams[SERVOMAXCURRENT] > 0 or show_current == 1)) {
     y_offset = 4;
   }
-  if (bINA219_installed && (current_mA != current_mA_alt) && ((current_servo > 0) || (show_current == 1))) {
+  if (bINA219_installed && (current_mA != current_mA_alt) && ((SysParams[SERVOMAXCURRENT] > 0) || (show_current == 1))) {
     gfx->fillRect(260, 187, 70, 18, COLOR_BACKGROUND);
     gfx->setTextColor(COLOR_TEXT);
     gfx->setFont(Punk_Mono_Thin_160_100);
     gfx->setCursor(265, 202);
-    if (current_mA > current_servo and current_servo > 0) {
+    if (current_mA > SysParams[SERVOMAXCURRENT] and SysParams[SERVOMAXCURRENT] > 0) {
       gfx->setTextColor(RED);
     }
     sprintf(ausgabe, "%4imA", current_mA);
@@ -1276,14 +789,14 @@ void processAutomatik(void) {
     gfx->print(ausgabe);
     autokorr_gr_alt = autokorrektur_gr;
   }
-  if ((glas_alt != fmenge_index and servo_aktiv == 0 and gewicht <= Products[fmenge_index].Gewicht - tara) or (glas_alt != fmenge_index and rotary_select_alt == SW_KORREKTUR)) {
+  if ((glas_alt != SysParams[CHOSENPRODUCT] and servo_aktiv == 0 and gewicht <= Products[SysParams[CHOSENPRODUCT]].Gewicht - tara) or (glas_alt != SysParams[CHOSENPRODUCT] and rotary_select_alt == SW_KORREKTUR)) {
     if (rotary_select == SW_MENU and servo_aktiv == 0) {
       gfx->setTextColor(COLOR_MARKER);
     }
     gfx->setCursor(2, 176);
     gfx->fillRect(0, 156, 320, 27, COLOR_BACKGROUND);
     gfx->setFont(Punk_Mono_Thin_240_150);
-    sprintf(ausgabe, "%dg ", (Products[fmenge_index].Gewicht));
+    sprintf(ausgabe, "%dg ", (Products[SysParams[CHOSENPRODUCT]].Gewicht));
     gfx->print(ausgabe);
     gfx->setFont(Punk_Mono_Thin_120_075);
     gfx->setCursor(2 + 14*StringLenght(ausgabe), 168);
@@ -1291,10 +804,10 @@ void processAutomatik(void) {
     gfx->print(ausgabe);
     gfx->setFont(Punk_Mono_Thin_240_150);
     gfx->setCursor(110, 176);
-    gfx->print(JarTypes[Products[fmenge_index].GlasTyp].name);
+    gfx->print(JarTypes[Products[SysParams[CHOSENPRODUCT]].GlasTyp].name);
 
     gfx->setTextColor(COLOR_TEXT);
-    glas_alt = fmenge_index;
+    glas_alt = SysParams[CHOSENPRODUCT];
   }
   if (SysParams[SERVOMIN]  + offset_winkel != winkel_min_alt) {
     gfx->setTextColor(COLOR_TEXT);
@@ -1358,13 +871,13 @@ void processAutomatik(void) {
       gfx->print(ausgabe);
     }
     if (gewicht != gewicht_alt) {
-      progressbar = 318.0*((float)gewicht/(float)(Products[fmenge_index].Gewicht));
+      progressbar = 318.0*((float)gewicht/(float)(Products[SysParams[CHOSENPRODUCT]].Gewicht));
       progressbar = constrain(progressbar,0,318);
       gfx->drawRect(0, 137, 320, 15, COLOR_TEXT);
-      if (Products[fmenge_index].Gewicht > gewicht) {
+      if (Products[SysParams[CHOSENPRODUCT]].Gewicht > gewicht) {
         gfx->fillRect  (1, 138, progressbar, 13, RED);
       }
-      else if (gewicht >= Products[fmenge_index].Gewicht and gewicht <= Products[fmenge_index].Gewicht + SysParams[COULANCE]){
+      else if (gewicht >= Products[SysParams[CHOSENPRODUCT]].Gewicht and gewicht <= Products[SysParams[CHOSENPRODUCT]].Gewicht + SysParams[COULANCE]){
         gfx->fillRect  (1, 138, progressbar, 13, GREEN);
       }
       else {
@@ -1389,7 +902,7 @@ void processAutomatik(void) {
     inawatchdog = 0;                    //schalte die kontiunirliche INA Messung aus
     //Servo ist zu
     if (servo.read() <= SysParams[SERVOMIN]  + offset_winkel and offset_winkel < 3) {
-      while(offset_winkel < 3 and current_servo < current_mA) {
+      while(offset_winkel < 3 and SysParams[SERVOMAXCURRENT] < current_mA) {
         offset_winkel = offset_winkel + 1;
         SERVO_WRITE(SysParams[SERVOMIN] + offset_winkel);
         current_mA = GetCurrent(10);
@@ -1404,7 +917,8 @@ void processAutomatik(void) {
 }
 
 void processHandbetrieb(void) 
-{ // function is not blocking, conditional part of main loop
+{ static int state = 0;
+  // function is not blocking, conditional part of main loop
   i = 0;
   static int manualtarra_old;
   static int desired_angle;
@@ -1414,23 +928,34 @@ void processHandbetrieb(void)
   static int servoactive = 0;
   static int oldservoactive;
   char text[64];
+
+  if(modus != MODE_HANDBETRIEB)state = 0; // new arrival
   
-  if (modus != MODE_HANDBETRIEB) // just once
-  { modus = MODE_HANDBETRIEB;
-    desired_angle = SysParams[SERVOMIN];
-    desired_angle_old = -1;       
-    SERVO_WRITE(desired_angle);
-    offset_winkel = 0;            // Offset vom Winkel wird auf 0 gestellt
-    rotary_select = SW_WINKEL;
-    manualtarra_old = -1;
-    OldWeight = -1234;
-    current_mA_alt = -1;
-    servoactive = 0;
-    oldservoactive = -1;
-    old_weight_status = -1;
+  switch(state)
+  { case 0:
+      // Select the right menu background stuff
+      SelectMenu(HANI_HAND);
+      modus = MODE_HANDBETRIEB;
+      desired_angle = SysParams[SERVOMIN];
+      desired_angle_old = -1;       
+      SERVO_WRITE(desired_angle);
+      offset_winkel = 0;            // Offset vom Winkel wird auf 0 gestellt
+      rotary_select = SW_WINKEL; 
+      manualtarra_old = -1;
+      OldWeight = -1234;
+      current_mA_alt = -1;
+      servoactive = 0;
+      oldservoactive = -1;
+      old_weight_status = -1;
+      state++;
+      return;
   }
+
   
-  if(IsPulsed(&bStopButtonPulsed))servoactive = 0;
+  if(IsPulsed(&bStopButtonPulsed))
+  { servoactive = 0;
+    manualtarra_old = -1; // force reprint
+  }
   if(IsPulsed(&bStartButtonPulsed))servoactive = 1;
 
   if (servoactive != oldservoactive) 
@@ -1461,8 +986,8 @@ void processHandbetrieb(void)
 
   // get encoder value
   pos = getRotariesValue(SW_WINKEL); // value 0-100  
-  desired_angle = (SysParams[SERVOMAX] * pos) / 100;
-  desired_angle = constrain(desired_angle, SysParams[SERVOMIN] + offset_winkel, SysParams[SERVOMAX]);
+  desired_angle = (SysParams[SERVOMAXDOS] * pos) / 100;
+  desired_angle = constrain(desired_angle, SysParams[SERVOMIN] + offset_winkel, SysParams[SERVOMAXDOS]);
 
   // close valve in paused mode
   if(servoactive == 0)SERVO_WRITE(SysParams[SERVOMIN] + offset_winkel);
@@ -1472,7 +997,7 @@ void processHandbetrieb(void)
   if(bScaleStable)
   { if(GramsOnScale<10)weight_status = WEIGHT_EMPTY_SCALE;
     else if(abs(GramsOnScale - SysParams[MANUALTARRA]) <= SysParams[AUTO_JAR_TOLERANCE])weight_status = WEIGHT_EMPTY_JAR;
-    else weight_status = WEIGHT_FILLING_JAR;
+    else weight_status = WEIGHT_PARTIALALF_JAR;
     //sprintf(text, "weight_status =  %d net-%d", weight_status, net_weight);
     //TFT_line_print(4, text);
   
@@ -1492,7 +1017,7 @@ void processHandbetrieb(void)
   // tarra value & current value for servo, printed on one line
   if((SysParams[MANUALTARRA] != manualtarra_old) || (current_mA != current_mA_alt))
   { manualtarra_old = SysParams[MANUALTARRA];
-    sprintf(text, "Tarra Empty Jar %dg", SysParams[MANUALTARRA]);
+    sprintf(text, "Tarra Jar %dg", SysParams[MANUALTARRA]);
     if(servoactive==1)
     { if(bINA219_installed && (current_mA != current_mA_alt))
       { if(show_current == 1)
@@ -1508,7 +1033,7 @@ void processHandbetrieb(void)
   // print allowable range and angle chosen for servo
   if(desired_angle != desired_angle_old)
   { desired_angle_old = desired_angle;
-    sprintf(text, "Range %d°-%d° Servo %d°", (SysParams[SERVOMIN] + offset_winkel), SysParams[SERVOMAX], desired_angle);
+    sprintf(text, "Range %d°-%d° Servo %d°", (SysParams[SERVOMIN] + offset_winkel), SysParams[SERVOMAXDOS], desired_angle);
     TFT_line_print(5, text);
   }
 
@@ -1518,7 +1043,7 @@ void processHandbetrieb(void)
     inawatchdog = 0;                    //schalte die kontiunirliche INA Messung aus
     //Servo ist zu
     if (servo.read() <= SysParams[SERVOMIN]  + offset_winkel and offset_winkel < 3) {
-      while(offset_winkel < 3 and current_servo < current_mA) {
+      while(offset_winkel < 3 and SysParams[SERVOMAXCURRENT] < current_mA) {
         offset_winkel = offset_winkel + 1;
         SERVO_WRITE(SysParams[SERVOMIN] + offset_winkel);
         current_mA = GetCurrent(10);
@@ -1538,7 +1063,9 @@ hw_timer_t * timer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 void IRAM_ATTR onTimer() // is called every 10mS
-{ int x;
+{ static int OldBeepTimes;
+  static int BeepTicks;
+  static bool bBeepNow = false;
   portENTER_CRITICAL_ISR(&timerMux);
   interruptCounter++;
 
@@ -1553,6 +1080,33 @@ void IRAM_ATTR onTimer() // is called every 10mS
 
   if((interruptCounter % 10)==0)
   { bUpdateDisplay = true; // display refresh max 10 times a second
+    
+    // global BeepTimes is set to 1 or 3 beeps
+    if(BeepTimes != OldBeepTimes)
+    { OldBeepTimes = BeepTimes;
+      bBeepNow = true;
+      BeepTicks = BeepLength; 
+    }
+
+    // keep track of the beeps to make
+    if(BeepTimes)
+    { if(BeepTicks > 0)
+      { BeepTicks -= 100;
+      }
+      else
+      { bBeepNow = !bBeepNow;
+        BeepTicks = BeepLength; 
+        BeepTimes--;
+      }  
+      if(bBeepNow)
+      { if(SysParams[BUZZER] == 1)digitalWrite(buzzer_pin, HIGH);
+        if(SysParams[LED] == 1)digitalWrite(led_pin,HIGH);
+      }  
+      else
+      { digitalWrite(buzzer_pin, LOW);
+        digitalWrite(led_pin,LOW);
+      }  
+    }
   }
 
   BlinkTimer10mS++;
@@ -1589,11 +1143,11 @@ void setup()
   while (!Serial);
   Serial.println("Hanimandl Start");
   
-  SetDefaultParameters(); // fills global array with all editable parameters
+  SetDefaultParameters(); // fills global array with safe parameters 
   LoadParameters(); // pull from eeprom what we have
 
   tft_colors();
-  tft_marker();
+  
   gfx->begin();
   gfx->fillScreen(COLOR_BACKGROUND);
   gfx->setUTF8Print(true);
@@ -1621,12 +1175,12 @@ void setup()
   // Check if we have a INA219 current sensor installed or not
   if (ina219.begin()) {
     bINA219_installed = true;
-    TFT_line_print(1, "INA219 Installed!");
+    TFT_line_print(1, "INA219 Initialized!");
     TFT_line_color(1, TFT_BLACK, TFT_GREEN);
   }
   else {
     bINA219_installed = false;
-    current_servo = 0;                              // ignore INA wenn keiner gefunden wird
+    SysParams[SERVOMAXCURRENT] = 0;                              // ignore INA wenn keiner gefunden wird
     TFT_line_print(1, "INA219 Not Installed!");
     TFT_line_color(1, TFT_BLACK, TFT_RED);
     TFT_line_blink(1, true);
@@ -1652,7 +1206,7 @@ void setup()
 //    servo.setPeriodHertz(50);
   SERVO_WRITE(SysParams[SERVOMIN]); // set valve to closed position
 
-  buzzer(BUZZER_SHORT);
+  buzzer(BUZZER_SHORT); 
 
   // new HX711 library used
   LoadCell.begin();
@@ -1695,7 +1249,7 @@ void setup()
       buzzer(BUZZER_ERROR);
     }
     else {                                          
-      TFT_line_print(2, "Scale Initialized!");
+      TFT_line_print(2, "Scale Initializing!");
       TFT_line_color(2, TFT_BLACK, TFT_GREEN);
     }
   }
@@ -1776,48 +1330,39 @@ void setup()
 
   // die drei Datenstrukturen des Rotaries initialisieren
   initRotaries(SW_WINKEL,    0,   0, 100, 5);     // Winkel
-  initRotaries(SW_KORREKTUR, 0, -90,  20, 1);     // Korrektur
+  initRotaries(SW_KORREKTUR, -20, -100, 0, 1);     // Korrektur
   initRotaries(SW_MENU,      0,   0,   7, 1);     // Menuauswahlen
   // Parameter aus den Preferences für den Rotary Encoder setzen
   setRotariesValue(SW_WINKEL,    pos);   
   setRotariesValue(SW_KORREKTUR, SysParams[CORRECTION]);
-  setRotariesValue(SW_MENU,      fmenge_index);
+  setRotariesValue(SW_MENU,      SysParams[CHOSENPRODUCT]);
 }
 
 void loop() 
 {  //INA219 Messung
-  if (bINA219_installed and inawatchdog == 1 and (current_servo > 0 or show_current == 1) and (modus == MODE_HANDBETRIEB or modus == MODE_AUTOMATIK)) {
+  if (bINA219_installed and inawatchdog == 1 and (SysParams[SERVOMAXCURRENT] > 0 or show_current == 1) and (modus == MODE_HANDBETRIEB or modus == MODE_AUTOMATIK)) {
     ina219_measurement();
   }
 
-  //Serial.println(start_button_very_long_pressed);
-
-  if(start_button_very_long_pressed > 200)
-  { // pressed for > 4 seconds
-     start_button_very_long_pressed = 0;
-     bOldMenu = ! bOldMenu;
+  if(stop_button_very_long_pressed > 500)
+  { // pressed for > 5 seconds
+    stop_button_very_long_pressed = 0;
+    { LoadCell.tare();
+      TFT_line_color(2, TFT_BLACK, TFT_GREEN); 
+      TFT_line_print(2, "Scale Tarred", true); 
+      delay(2000);
+      TFT_line_print(2, ""); 
+      OldWeight = -1; // force reprint of scale value
+    }  
   }   
 
   // Setup Menu 
   if(deb_setup_switch) 
-  { if(bOldMenu)
-    { if (modus != MODE_SETUP)
-      { ActLcdMode = 999; // force display build
-        SelectMenu(HANI_SETUP);
-      } 
-      processSetup();
-    }
-    else 
-    { MenuHandler(); // new menu style
-    }
+  { MenuHandler(); // new menu style
   }
   // Handbetrieb 
   else if(deb_manual_switch) 
-  { if (modus != MODE_HANDBETRIEB)
-    { ActLcdMode = 999; // force new display build
-      SelectMenu(HANI_HAND);
-    }
-    processHandbetrieb();
+  { processHandbetrieb();
   }
     // Automatik-Betrieb 
   else if(deb_auto_switch) 
@@ -1826,54 +1371,27 @@ void loop()
 
 }
 
-
-// Wir nutzen einen aktiven Summer, damit entfällt die tone Library, die sich sowieso mit dem Servo beisst.
-void buzzer(byte type) {
-  if (buzzermode == 1 or ledmode == 1) {
-    switch (type) {
-      case BUZZER_SHORT: //short
-        if (buzzermode == 1) {digitalWrite(buzzer_pin,HIGH);}
-        if (ledmode == 1) {digitalWrite(led_pin,HIGH);}
-        if (buzzermode == 1 or ledmode == 1) {delay(100);}
-        if (buzzermode == 1) {digitalWrite(buzzer_pin,LOW);}
-        if (ledmode == 1) {digitalWrite(led_pin,LOW);}
-        break;
-      case BUZZER_LONG: //long
-        if (buzzermode == 1) {digitalWrite(buzzer_pin,HIGH);}
-        if (ledmode == 1) {digitalWrite(led_pin,HIGH);}
-        if (buzzermode == 1 or ledmode == 1) {delay(500);}
-        if (buzzermode == 1) {digitalWrite(buzzer_pin,LOW);}
-        if (ledmode == 1) {digitalWrite(led_pin,LOW);}
-        break;
-      case BUZZER_SUCCESS: //success
-        if (buzzermode == 1) {digitalWrite(buzzer_pin,HIGH);}
-        if (ledmode == 1) {digitalWrite(led_pin,HIGH);}
-        if (buzzermode == 1 or ledmode == 1) {delay(100);}
-        if (buzzermode == 1) {digitalWrite(buzzer_pin,LOW);}
-        if (ledmode == 1) {digitalWrite(led_pin,LOW);}
-        if (buzzermode == 1 or ledmode == 1) {delay(100);}
-        if (buzzermode == 1) {digitalWrite(buzzer_pin,HIGH);}
-        if (ledmode == 1) {digitalWrite(led_pin,HIGH);}
-        if (buzzermode == 1 or ledmode == 1) {delay(100);}
-        if (buzzermode == 1) {digitalWrite(buzzer_pin,LOW);}
-        if (ledmode == 1) {digitalWrite(led_pin,LOW);}
-        if (buzzermode == 1 or ledmode == 1) {delay(100);}
-        if (buzzermode == 1) {digitalWrite(buzzer_pin,HIGH);}
-        if (ledmode == 1) {digitalWrite(led_pin,HIGH);}
-        if (buzzermode == 1 or ledmode == 1) {delay(100);}
-        if (buzzermode == 1) {digitalWrite(buzzer_pin,LOW);}
-        if (ledmode == 1) {digitalWrite(led_pin,LOW);}
-        break;
-      case BUZZER_ERROR: //error
-        if (buzzermode == 1) {digitalWrite(buzzer_pin,HIGH);}
-        if (ledmode == 1) {digitalWrite(led_pin,HIGH);}
-        if (buzzermode == 1 or ledmode == 1) {delay(1500);}
-        if (buzzermode == 1) {digitalWrite(buzzer_pin,LOW);}
-        if (ledmode == 1) {digitalWrite(led_pin,LOW);}
-        break;
-    }
+void buzzer(int sound)
+{ switch(sound)
+  { case BUZZER_SHORT:
+      BeepTimes = 1;
+      BeepLength = 100;   
+      break;
+    case BUZZER_SUCCESS:
+      BeepTimes = 3;   
+      BeepLength = 100;   
+      break;
+    case BUZZER_LONG:
+      BeepTimes = 1;   
+      BeepLength = 500;  
+      break;
+    case BUZZER_ERROR:
+      BeepTimes = 1;   
+      BeepLength = 1500;  
+      break;
   }
 }
+
 
 // Supportfunktionen für stufenweise Gewichtsverstellung
 int step2weight(int step) {
@@ -1950,7 +1468,7 @@ int GetCurrent(int count) {
 }
 
 void ina219_measurement(void) {
-  if (current_mA > current_servo and current_servo > 0) {
+  if (current_mA > SysParams[SERVOMAXCURRENT] and SysParams[SERVOMAXCURRENT] > 0) {
     if (last_overcurrenttime == 0) {
       last_overcurrenttime = millis();
     }

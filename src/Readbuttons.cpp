@@ -185,7 +185,7 @@ void ReadButtons(void * pvParameters)
     }
     else encoder_button_changed = 0;
 
-    if(deb_encoder_button==false) // pressed?
+    if(deb_encoder_button==true) // pressed?
     { encoder_button_very_long_pressed++; // use that to activate portal wifi manager
     }
     else

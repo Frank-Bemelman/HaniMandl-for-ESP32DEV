@@ -11,16 +11,13 @@
 
 extern void setPreferences(void);
 extern int GetCurrent(int count);
-extern void buzzer(byte type);
+extern void buzzer(int type);
 extern void initRotaries( int rotary_mode, int rotary_value, int rotary_min, int rotary_max, int rotary_step );
 extern int getRotariesValue( int rotary_mode );
 extern void setRotariesValue( int rotary_mode, int rotary_value );
-extern void setupINA219();            // INA219 Setup    
-
 
 extern int alarm_overcurrent;          // Alarmflag wen der Servo zuwiel Strom zieht
 extern int current_mA;                     // Strom welcher der Servo zieht
-extern int current_servo;              // 0 = INA219 wird ignoriert, 1-1000 = erlaubter Maximalstrom vom Servo in mA
 extern int offset_winkel;              // Offset in Grad vom Schlieswinkel wen der Servo Überstrom hatte (max +3Grad vom eingestelten Winkel min)
 extern Servo servo;
 extern int inawatchdog;                // 0 = aus, 1 = ein / wird benötigt um INA messung auszusetzen
@@ -56,7 +53,6 @@ extern int tara_glas;                      // Tara für das aktuelle Glas, falls
 extern long rawtareoffset;                  // Gewicht der leeren Waage
 extern float CalibrationFactor;            // Skalierungsfaktor für Werte der Waage
 extern int fmenge;                         // ausgewählte Füllmenge
-extern int fmenge_index;                   // Index in gläser[]
 extern int korrektur;                      // Korrekturwert für Abfüllmenge
 
 extern int progressbar;                // Variable für den Progressbar
@@ -86,9 +82,10 @@ extern int ScaleStable;
 
 
 extern void SetupMyDisplay(void);
-extern void TFT_line_print(int line, const char *content);
+extern void TFT_line_print(int line, const char *content, bool blink = false);
 extern void TFT_line_color(int line, int textcolor, int backgroundcolor);
 extern void TFT_line_blink(int line, bool blink); 
+extern TFTline MyDisplay[];
 extern void SelectMenu(int menu); 
 extern bool IsPulsed(bool *button);
 
@@ -155,10 +152,8 @@ void MenuHandler(void)
       TFT_line_print(0, BigMenu[CurrentMenu].menuname);
       TFT_line_print(1, BigMenu[CurrentMenu].menuheader);
       sprintf(text, "%02d*%02d", LastMenu, SETUP_ENDOFMENU); 
-//      TFT_line_print(5, "Navigate And Select");
       TFT_line_print(5, text);
       TFT_line_color(5, TFT_WHITE, TFT_BLACK);
-//      TFT_line_blink(5, true);
       initRotaries(SW_MENU, LastMenu, SETUP_STARTOFMENU, SETUP_ENDOFMENU, 1);
       state++;
       return;
@@ -189,44 +184,33 @@ void MenuHandler(void)
       // use the old menus
       switch(LastMenu)
       { case 0:   
-          //setupTara();              // Tara 
           ParameterMenu(0);
           break;
         case 1:   
           CalibrateScale();         // new menu
           break;
         case 2:   
-//          setupFuellmenge();        // Füllmenge               
           ParameterMenu(2);
           break;  
         case 3:   
-//          setupAutomatik();         // Autostart/Autokorrektur konfigurieren 
           ParameterMenu(3);
           break;  
         case 4:   
-//          setupServoWinkel();       // Servostellungen Minimum, Maximum und Feindosierung
           ParameterMenu(4);
           break;  
         case 5:   
-//          setupParameter();         // Sonstige Einstellungen
           ParameterMenu(5);
           break;  
         case 6:   
-//          setupCounter();           // Zählwerk
           ParameterMenu(6);
           break;  
         case 7:   
-//          setupTripCounter();       // Zählwerk Trip
           ParameterMenu(7);
           break;  
         case 8:   
-          setupINA219();            // INA219 Setup    
-          break;  
-        case 9:   
-//          setupClearPrefs();        // EEPROM löschen
           ParameterMenu(9);
           break;  
-        case 10:   
+        case 9:   
           ParameterMenu(10);  // languages
           break;  
         default:   
@@ -273,8 +257,7 @@ void CalibrateScale(void)
      switch(state)
      { case 0:
          TFT_line_color(4, TFT_BLACK, TFT_RED);
-         TFT_line_print(4, "Empty Scale Please!");
-         TFT_line_blink(4, true);
+         TFT_line_print(4, "Empty Scale Please!", true);
          TFT_line_print(5, "Continue When Done");
          state++; 
          break;
@@ -290,8 +273,7 @@ void CalibrateScale(void)
          break;  
        case 3: 
          TFT_line_color(3, TFT_BLACK, TFT_RED);
-         TFT_line_print(3, "Place A Known Weight");
-         TFT_line_blink(3, true);
+         TFT_line_print(3, "Place A Known Weight", true);
          TFT_line_print(5, "Continue When Done");
          initRotaries(SW_MENU, kali_gewicht, 100, 9999, 1); 
          state++;
@@ -314,8 +296,7 @@ void CalibrateScale(void)
          //TFT_line_print(3, text);
          //sprintf(text,"Calibration Factor = %f", CalibrationFactor);
          //TFT_line_print(4, text);
-         TFT_line_print(5, "Thank You!");
-         TFT_line_blink(5, true);
+         TFT_line_print(5, "Thank You!", true);
          setPreferences();
          SaveParameters();
          delay(1000);
@@ -388,6 +369,7 @@ void ParameterMenu(int menu)
          else
          { SysParams[BigMenu[menu].line[editline].targetidx] = restorevalue;
          }
+         SysParams[BigMenu[menu].line[editline].selected] = false;
          GetTextForMenuLine(text, menu, editline);
          TFT_line_print(editline-scrollpos+1, text);
          initRotaries(SW_MENU, editline, 0, menuitems, 1);
@@ -402,14 +384,17 @@ void ParameterMenu(int menu)
          { if(BigMenu[menu].line[n+scrollpos].targetidx != NOT_USED)
            { GetTextForMenuLine(text, menu, n+scrollpos);
              TFT_line_print(n+1, text);
-             if(editline != (n+scrollpos))TFT_line_color(n+1, TFT_WHITE, TFT_DARKGREY);
-             else TFT_line_color(n+1, TFT_WHITE, TFT_BLACK); // display as selected
+             if(editline != (n+scrollpos))
+             { TFT_line_color(n+1, TFT_WHITE, TFT_DARKGREY);
+             }
+             else
+             { TFT_line_color(n+1, TFT_WHITE, TFT_BLACK); // display as chosen
+             }
            }  
          }
-         TFT_line_print(5, BigMenu[menu].bottomline);
+         TFT_line_print(5, BigMenu[menu].bottomline, editline==menuitems);
          if(editline==menuitems)
          { TFT_line_color(5, TFT_WHITE, TFT_BLACK);
-           TFT_line_blink(5, true);
          }
          else
          { TFT_line_color(5, TFT_WHITE, TFT_DARKGREY); 
@@ -444,7 +429,15 @@ void ParameterMenu(int menu)
              { state = 5; 
              }
              else
-             { TFT_line_blink(editline-scrollpos+1, true);
+             { BigMenu[menu].line[editline_old].selected = false;
+               BigMenu[menu].line[editline].selected = true;
+           
+               TFT_line_blink(editline-scrollpos+1, true);
+               if(MyDisplay[editline-scrollpos+1].scroll)  // is a a scrolling menuline, maybe a shortened text for this?
+               { GetTextForMenuLine(text, menu, editline);
+                 TFT_line_print(editline-scrollpos+1, text, true);
+               }
+
                // setup encoder for this edit range
                if(BigMenu[menu].line[editline].parmtype==SET_JAR_PRESET)
                { restorevalue=Products[editline].Gewicht;
@@ -493,16 +486,14 @@ void ParameterMenu(int menu)
              { if(newvalue!=Products[editline].Gewicht)
                { Products[editline].Gewicht = newvalue;
                  GetTextForMenuLine(text, menu, editline);
-                 TFT_line_print(editline-scrollpos+1, text);
-                 TFT_line_blink(editline-scrollpos+1, true);
+                 TFT_line_print(editline-scrollpos+1, text, true);
                }
              }
              else // 2nd column
              { if(newvalue!=Products[editline].GlasTyp)
                { Products[editline].GlasTyp = newvalue;
                  GetTextForMenuLine(text, menu, editline);
-                 TFT_line_print(editline-scrollpos+1, text);
-                 TFT_line_blink(editline-scrollpos+1, true);
+                 TFT_line_print(editline-scrollpos+1, text, true);
                }
              }
            }
@@ -510,32 +501,28 @@ void ParameterMenu(int menu)
            { if(newvalue!=Products[editline].Count)
               {Products[editline].Count = newvalue;
                GetTextForMenuLine(text, menu, editline);
-               TFT_line_print(editline-scrollpos+1, text);
-               TFT_line_blink(editline-scrollpos+1, true);
+               TFT_line_print(editline-scrollpos+1, text,true);
              }
            }
            else if (BigMenu[menu].line[editline].parmtype==SET_TARRA)
            { if(newvalue!=JarTypes[editline].tarra)
               {JarTypes[editline].tarra = newvalue;
                GetTextForMenuLine(text, menu, editline);
-               TFT_line_print(editline-scrollpos+1, text);
-               TFT_line_blink(editline-scrollpos+1, true);
+               TFT_line_print(editline-scrollpos+1, text, true);
              }
            }
            else if (BigMenu[menu].line[editline].parmtype==SET_TRIPCOUNT)
            { if(newvalue!=Products[editline].TripCount)
               {Products[editline].TripCount = newvalue;
                GetTextForMenuLine(text, menu, editline);
-               TFT_line_print(editline-scrollpos+1, text);
-               TFT_line_blink(editline-scrollpos+1, true);
+               TFT_line_print(editline-scrollpos+1, text, true);
              }
            }
            
            else if(newvalue!=SysParams[BigMenu[menu].line[editline].targetidx])
            { SysParams[BigMenu[menu].line[editline].targetidx] = newvalue;
              GetTextForMenuLine(text, menu, editline);
-             TFT_line_print(editline-scrollpos+1, text);
-             TFT_line_blink(editline-scrollpos+1, true);
+             TFT_line_print(editline-scrollpos+1, text, true);
            }
 
            if(IsPulsed(&bEncoderButtonPulsed))  // pressed?
@@ -545,8 +532,7 @@ void ParameterMenu(int menu)
                { preferences.begin("EEPROM", false);
                  preferences.clear();
                  preferences.end();
-                 TFT_line_print(5, "Will Reboot Now!");
-                 TFT_line_blink(5, true);
+                 TFT_line_print(5, "Will Reboot Now!", true);
                  delay(2000);
                  ESP.restart();
                }
@@ -554,17 +540,16 @@ void ParameterMenu(int menu)
                { nvs_flash_erase();    // erase the NVS partition and...
                  nvs_flash_init();     // initialize the NVS partition.
                  //Da machen wir gerade einen restart
-                 TFT_line_print(5, "Will Reboot Now!");
-                 TFT_line_blink(5, true);
+                 TFT_line_print(5, "Will Reboot Now!", true);
                  delay(2000);
                  ESP.restart();
                }
                if(BigMenu[menu].line[editline].parmtype == SET_TARRA)TFT_line_color(editline-scrollpos+1, TFT_WHITE, TFT_BLACK); // back to normal
                initRotaries(SW_MENU, editline, 0, menuitems, 1);
                column=1;  
-               state=1;  
-               TFT_line_print(5, "Saved!");
-               TFT_line_blink(5, true);
+               state=1; 
+               BigMenu[menu].line[editline].selected = false; // not selected as target under edit anymore
+               TFT_line_print(5, "Saved!", true);
                SaveParameters();
                delay(1000);
                TFT_line_print(5, BigMenu[menu].bottomline);
@@ -584,8 +569,7 @@ void ParameterMenu(int menu)
          state++; 
          break;  
        case 6:
-         TFT_line_print(5, "Thank You!");
-         TFT_line_blink(5, true);
+         TFT_line_print(5, "Thank You!", true);
          SaveParameters();
          state++;
          break;
@@ -633,8 +617,8 @@ void GetTextForMenuLine(char* text, int menu, int line)
     case SET_DEGREES:
       sprintf(text, "%s %d°", BigMenu[menu].line[line].name, targetvalue);
       break;
-    case SET_CURRENT:
-      sprintf(text, "%smA", BigMenu[menu].line[line].name, targetvalue);
+    case SET_MILLIAMPSMAX:
+      sprintf(text, "%s %dmA", BigMenu[menu].line[line].name, targetvalue);
       break;
     case SET_LANGUAGE:
     case RESETPREFS:
@@ -653,6 +637,19 @@ void GetTextForMenuLine(char* text, int menu, int line)
     case SET_GRAM_TOLERANCE:
       sprintf(text, "%s ±%dg", BigMenu[menu].line[line].name, targetvalue);
       break;
+    case SET_CHOSEN:
+      if(BigMenu[menu].line[line].selected)
+      { sprintf(text, "%dg+%dg %s", Products[targetvalue].Gewicht, SysParams[COULANCE], JarTypes[Products[targetvalue].GlasTyp].name);
+      }
+      else
+      { sprintf(text, "Default Product %dg+%dg %s", Products[targetvalue].Gewicht, SysParams[COULANCE], JarTypes[Products[targetvalue].GlasTyp].name);
+      }
+      break;
+    case SET_PERCENT:
+      sprintf(text, "%s %d%%", BigMenu[menu].line[line].name, targetvalue);
+      break;
+
+
     default:
       sprintf(text, "%s", BigMenu[menu].line[line].name);
       break;
@@ -670,8 +667,9 @@ void SetDefaultParameters(void)
   }
   SysParams[LANGUAGE] = 0; // default is English
   SysParams[MANUALTARRA] = 25;
-  SysParams[AUTO_JAR_TOLERANCE]=20; // 20 gram tolerance on empty jar
-  SysParams[AUTO_CORRECTION]=1;
+  SysParams[AUTO_JAR_TOLERANCE] = 20; // 20 gram tolerance on empty jar
+  SysParams[AUTO_CORRECTION] = 1;
+  SysParams[CHOSENPRODUCT] = 0;
   
 //  CalibrationFactor = 0; // assume not calibrated
 }

@@ -5,10 +5,12 @@
 TFT_eSPI tft = TFT_eSPI(240,320);
 
 #include "hani.h"
-#include "Arialnarrow.h"
+#include "Arialnarrow26.h"
 #include "Arialbd72.h"
+#include "Tahoma18.h"
 
 #include "flowers.h"
+#include "jar90h62w2.h"
 
 
 bool bScrollNow = false;
@@ -22,6 +24,11 @@ bool bPrintWeight = false;
 int  NewWeight = 0;
 int  OldWeight = -1234;
 extern bool bScaleStable;
+
+int JarIconFilled = 0; // to mimic jar being filled
+int OldJarIconFilled = 0; // redraw jar if different
+int JarIconFilledColor; // color of jar content
+int OldJarIconFilledColor; // color of jar content
 
 extern int CurrentMenu;
 extern int EditMenu;
@@ -37,8 +44,21 @@ char Credits[] = "Original Idea - M. Vasterling - Other Contributors - M. Wetzel
 
 int NewHaniDisplayMode = HANI_LOGO;
 
+// line dimension to fill the jar, bottom up
+int linelengths[69] = {
+38,42,44,46,48,
+50,52,52,52, 52,52,52,52,52,
+52,52,52,52,52, 52,52,52,52,52,
+52,52,52,52,52, 52,52,52,52,52,
+52,52,52,52,52, 52,52,52,52,52,
+52,52,52,52,52, 52,52,52,52,52,
+52,52,52,52,52, 52,52,52,52,52,
+50,50,48,46,46,
+};
+
 
 // local function prototypes
+void TFT_line_print2(int line, const char *content);
 void UpdateLCD(void);
 
 
@@ -123,7 +143,7 @@ void SetupMyDisplay(void)
   tft.setRotation(1); // 3 - using ST7789 320(w) x 240(h) with connector on righthand side
   UseFont(Arialnarrow26);
   //tft.loadFont(Arialnarrow26);
-  tft.setAttribute(UTF8_SWITCH, false); 
+//  tft.setAttribute(UTF8_SWITCH, false); 
   
   tft.setTextSize(2);
   tft.setTextWrap(false, false);
@@ -156,7 +176,7 @@ void SetupMyDisplay(void)
 #define TFTNUMOFLINES 6
 
 TFTline MyDisplay[TFTNUMOFLINES] = {{ true, "", false }, { true, "", false }, { true, "", false }, { true, "", false }, { true, "", false }, { true, "", false }};
-
+TFTline TheAngles;
 
 // need gxAdvance and gdX for all characters for vertical scrolling, but don't want to change the TFT_eSPI library itself - so have to make some references
 
@@ -227,12 +247,16 @@ void TFT_line_blink(int line, bool blink)
   MyDisplay[line].refresh = true;
 }
 
+void TFT_line_print(int line, const char *content, bool blink = false)
+{ TFT_line_print2(line, content);
+  TFT_line_blink(line, blink);
+}
 
 
 // buffers for 6 lines of text to display
 // deals with lenghts, checks if it fits on display or flags it as horizontal scroll text
 // converts UTF-8 up to U+00FF (latin-1 supplement) back to old school extended ascii
-void TFT_line_print(int line, const char *content)
+void TFT_line_print2(int line, const char *content)
 { char *p;
   char extAscii[256];
   int n;
@@ -277,7 +301,7 @@ void TFT_line_print(int line, const char *content)
   
   
 
-      if (MyDisplay[line].pixelwidth > (320 - (MyDisplay[line].rounded ? 50 : 6)) ) // does not fit, resort to horizontal scroll of this text
+      if (MyDisplay[line].pixelwidth > (320 - (MyDisplay[line].rounded ? 40 : 6)) ) // does not fit, resort to horizontal scroll of this text
       { MyDisplay[line].scroll = true;
         strcat(extAscii, " --- "); // add --- to make it nicer when looping around
         strcpy(MyDisplay[line].content, extAscii);
@@ -358,10 +382,11 @@ void UpdateLCD(void)
   char text[32];
   int tw;
   int dot;
-  
+  int n;
   static int scrollpos = 0;
   static bool refreshdisplay = false;
   static bool boldscalestable;
+  int OldLevel;
 
   int TextDatum;
 
@@ -408,10 +433,17 @@ void UpdateLCD(void)
 
         CanvasColor = TFT_BLACK; 
         tft.fillScreen(CanvasColor);
+        // lines above and below line with servo degrees
+        tft.drawLine(0, 34, 320, 34, TFT_WHITE);
+        tft.drawLine(0, 54, 320, 54, TFT_WHITE);
+
+        //tft.drawLine(5, 60, 5, 150, TFT_WHITE);
+        TJpgDec.drawJpg(2, 62, jar90h62w2, sizeof(jar90h62w2));  
+
         BackGroundColor = TFT_DARKGREY;
         TextColor = TFT_WHITE;
-        TFT_line_print(0, "AUTOMATIC PAUSED");
         break;
+
       case HANI_HAND:
         for (line = 0; line < TFTNUMOFLINES; line++)
         { MyDisplay[line].backgroundcolor = TFT_DARKGREY;
@@ -470,179 +502,257 @@ void UpdateLCD(void)
     }
   }
 
- //Serial.println("Pak hem2"); 
- if(xSemaphoreTake(xDisplayMutex, (TickType_t)10)==pdTRUE)
- {  
- for (line = 0; line < 6; line++)
- { if (MyDisplay[line].refresh)
-   { tft.setTextDatum(TC_DATUM); // horizontally centered for text that is not scrolling
-     tw = MyDisplay[line].pixelwidth;
-     if (tw > (320-40))tw = (320-40);
-     tft.setViewport(0, (line * 40), 320, 40, true);
-     
-     // first wipe out old stuff by reprinting canvas or printing partial jpg
-     if (MyDisplay[line].rounded) // not needed for square lines, only for rounded lines
-     { //if (MyDisplay[line].scroll == false) // not needed for scroll texts as these are full size anyway
-       { if(MyDisplay[line].canvascolor >= 0) // fixed color, not jpg canvas 
-         {  if(MyDisplay[line].pixelwidth < MyDisplay[line].lastpixelwidth) // restauration canvas is needed
-            { tft.fillRoundRect(0, 2, 320, 32, 0, MyDisplay[line].canvascolor); // radius 0 makes it a square
+  //Serial.println("Pak hem2"); 
+  if(xSemaphoreTake(xDisplayMutex, (TickType_t)10)==pdTRUE)
+  { for (line = 0; line < 6; line++)
+    { if (MyDisplay[line].refresh)
+      { tft.setTextDatum(TC_DATUM); // horizontally centered for text that is not scrolling
+        tw = MyDisplay[line].pixelwidth;
+        if (tw > (320-40))tw = (320-40);
+        tft.setViewport(0, (line * 40), 320, 40, true);
+
+        // in auto mode, protect jar icon, falls in line 1-2-3, set different viewport
+        if(ActLcdMode==HANI_AUTO)
+        { if(line>=1 && line <=3)
+          { tft.setViewport(62+5, (line * 40), 320 - 67, 40); 
+          }
+        }  
+
+        // first wipe out old stuff by reprinting canvas or printing partial jpg
+        if (MyDisplay[line].rounded) // not needed for square lines, only for rounded lines
+        { if (MyDisplay[line].scroll == false) // not needed for scroll texts as these are full size anyway
+          { if(MyDisplay[line].canvascolor >= 0) // fixed color, not jpg canvas 
+            {  if(MyDisplay[line].pixelwidth < MyDisplay[line].lastpixelwidth) // restauration canvas is needed
+               { tft.fillRoundRect(0, 2, 320, 32, 0, MyDisplay[line].canvascolor); // radius 0 makes it a square
+               }  
             }
-         }
-         else
-         { // drawJpg respects the viewport, but we have to move the jpg upwards to get the right portion of the jpg printed in viewport
-           TJpgDec.drawJpg(0, -(line * 40), flowers, sizeof(flowers));
-         }
-       }
-     }
-     
-     // now print background box for text, square for line 0 and rounded for other lines
-     if (!MyDisplay[line].rounded)
-     { if(MyDisplay[line].pixelwidth != MyDisplay[line].lastpixelwidth)
-       { //tft.fillRoundRect(0, 0, 320, 34, 0, MyDisplay[line].backgroundcolor); // radius 0 makes it a square
-         tft.fillRect(0, 0, 320, 34, MyDisplay[line].backgroundcolor); // radius 0 makes it a square
-       }
-     }  
-     else
-     { if(tw>0) // there is something to print
-       { if(MyDisplay[line].pixelwidth != MyDisplay[line].lastpixelwidth) // restauration is needed
-         { if(MyDisplay[line].canvascolor<0) // jpg as background
-           { tft.fillRoundRect(  ((320 - tw) / 2) - 15   ,  2, tw + 30, 32, 16, MyDisplay[line].backgroundcolor); 
-           }
-           else
-           { tft.fillSmoothRoundRect(((320 - tw) / 2) - 15, 2, tw+30, 32, 16, MyDisplay[line].backgroundcolor, MyDisplay[line].canvascolor);
-           }
-         }
-       }
-     }
-     
-     if(tw>0) // there is some text to print
-     { if (!MyDisplay[line].scroll) // this text does not scroll
-       { tft.setTextColor(MyDisplay[line].textcolor, MyDisplay[line].backgroundcolor, true);
-         if(MyDisplay[line].dotmax == 0)
-         { tft.drawString(MyDisplay[line].content, 320/2, TYOFF); // centered around x coordinate 120
-         }
-         else // here come the dots
-         { for(dot=0;dot<=MyDisplay[line].dotmax;dot++)
-           { xpos = ((320 - tw)/2) + 3 + (dot * 24);
-             if(dot==MyDisplay[line].dotactive)
-             { // tft.drawSmoothCircle (xpos,TYOFF+10, 5, TFT_WHITE, MyDisplay[line].backgroundcolor);
-               tft.drawArc(xpos, TYOFF+10, 5, 0, 0, 360, TFT_WHITE, MyDisplay[line].backgroundcolor, true);
-             }
-             else
-             { // tft.drawSmoothCircle (xpos,TYOFF+10, 5, TFT_LIGHTGREY, MyDisplay[line].backgroundcolor);
-               tft.drawArc(xpos, TYOFF+10, 5, 0, 0, 360, TFT_DARKGREY, MyDisplay[line].backgroundcolor, true);
-             }
-           }
-         } 
-       }
-     }  
-     MyDisplay[line].lastpixelwidth = MyDisplay[line].pixelwidth; // so we can check later if this is a shorter or longer text to fine tune canvas restoration
-     MyDisplay[line].refresh = false;
-     if(MyDisplay[line].blink == true)
-     { BlinkTimer10mS = 0; // reset the blink timer so blinking starts elegant
-       bBlinkDisplay = 0;
-       MyDisplay[line].blinkold = !bBlinkDisplay; 
-     }  
-   }
-   else if(MyDisplay[line].blink == true)  
-   { // Serial.print("line="); Serial.println(line);
-     if(MyDisplay[line].blinkold != bBlinkDisplay)
-     { MyDisplay[line].blinkold = bBlinkDisplay;
-       // Serial.print("BlinkTimer10mS="); Serial.println(BlinkTimer10mS);
-       tft.setTextDatum(TC_DATUM); // horizontally centered for text that is not scrolling
-       tw = MyDisplay[line].pixelwidth;
-       if (tw > (320-40))tw = (320-40);
-       tft.setViewport(0, (line * 40), 320, 40, true);
-       if(tw>0) 
-       { if(!bBlinkDisplay) // print normal
-         { tft.setTextColor(MyDisplay[line].textcolor, MyDisplay[line].backgroundcolor, true);
-           tft.drawString(MyDisplay[line].content, 320/2, TYOFF); // centered around x coordinate 120
-         }
-         else // print nothing as part of the blink display
-         { if(MyDisplay[line].canvascolor<0) // jpg as background
-           { tft.fillRoundRect(  ((320 - tw) / 2) - 15   ,  2, tw + 30, 32, 16, MyDisplay[line].backgroundcolor); 
-           }
-           else
-           { tft.fillSmoothRoundRect(((320 - tw) / 2) - 15, 2, tw+30, 32, 16, MyDisplay[line].backgroundcolor, MyDisplay[line].canvascolor);
-           }
-         }
-       } 
-     }
-   }
- } 
-  
- if(bScrollNow == true) // set true again every 50mS by interrupt
- { bScrollNow = false; 
-   for (line = 1; line < 6; line++)
-   { if (MyDisplay[line].scroll)
-     { if(MyDisplay[line].scrolldelay)
-       { if(MyDisplay[line].scrolldelay==20)bUpdateDisplay = true; // force print first time 
-          MyDisplay[line].scrolldelay--;
-       }
-       if(!MyDisplay[line].scrolldelay || MyDisplay[line].scrolldelay==19)
-       {      
-      
-       if(MyDisplay[line].scrolldelay)MyDisplay[line].scrolldelay--;
-       startMillis = micros();
-       TextDatum = tft.getTextDatum();
-       tft.setTextDatum(TL_DATUM);
+            else
+            { // drawJpg respects the viewport, but we have to move the jpg upwards to get the right portion of the jpg printed in viewport
+              TJpgDec.drawJpg(0, -(line * 40), flowers, sizeof(flowers));
+            }
+          }
+        }
 
-       if (MyDisplay[line].scrollpos >= MyDisplay[line].pixelwidth)
-       { MyDisplay[line].scrollpos = 0;
+        tft.setViewport(0, (line * 40), 320, 40, true);
+
+        // now print background box for text, square for line 0 and rounded for other lines
+        if (!MyDisplay[line].rounded)
+        { if(MyDisplay[line].pixelwidth != MyDisplay[line].lastpixelwidth)
+          { //tft.fillRoundRect(0, 0, 320, 34, 0, MyDisplay[line].backgroundcolor); // radius 0 makes it a square
+            tft.fillRect(0, 0, 320, 34, MyDisplay[line].backgroundcolor); 
+          }
+        }  
+        else
+        { if(tw>0) // there is something to print
+          { if(MyDisplay[line].pixelwidth != MyDisplay[line].lastpixelwidth) // restauration is needed
+             { if(MyDisplay[line].canvascolor<0) // jpg as background
+               { tft.fillRoundRect(  ((320 - tw) / 2) - 15   ,  2, tw + 30, 32, 16, MyDisplay[line].backgroundcolor); 
+               }
+               else
+               { tft.fillSmoothRoundRect(((320 - tw) / 2) - 15, 2, tw+30, 32, 16, MyDisplay[line].backgroundcolor, MyDisplay[line].canvascolor);
+               }
+             }
+           }
+         }
+     
+         if(tw>0) // there is some text to print
+         { if (!MyDisplay[line].scroll) // this text does not scroll
+           { tft.setTextColor(MyDisplay[line].textcolor, MyDisplay[line].backgroundcolor, true);
+             if(MyDisplay[line].dotmax == 0)
+             { tft.drawString(MyDisplay[line].content, 320/2, TYOFF); // centered around x coordinate 120
+             }
+             else // here come the dots
+             { for(dot=0;dot<=MyDisplay[line].dotmax;dot++)
+               { xpos = ((320 - tw)/2) + 3 + (dot * 24);
+                 if(dot==MyDisplay[line].dotactive)
+                 { // tft.drawSmoothCircle (xpos,TYOFF+10, 5, TFT_WHITE, MyDisplay[line].backgroundcolor);
+                   tft.drawArc(xpos, TYOFF+10, 5, 0, 0, 360, TFT_WHITE, MyDisplay[line].backgroundcolor, true);
+                 }
+                 else
+                 { // tft.drawSmoothCircle (xpos,TYOFF+10, 5, TFT_LIGHTGREY, MyDisplay[line].backgroundcolor);
+                   tft.drawArc(xpos, TYOFF+10, 5, 0, 0, 360, TFT_DARKGREY, MyDisplay[line].backgroundcolor, true);
+                 }
+               }
+             } 
+           }
+         }  
+    
+         MyDisplay[line].lastpixelwidth = MyDisplay[line].pixelwidth; // so we can check later if this is a shorter or longer text to fine tune canvas restoration
+         MyDisplay[line].refresh = false;
+         if(MyDisplay[line].blink == true)
+         { BlinkTimer10mS = 0; // reset the blink timer so blinking starts elegant
+           bBlinkDisplay = 0;
+           MyDisplay[line].blinkold = !bBlinkDisplay; 
+         }  
        }
+       else if(MyDisplay[line].blink == true && !MyDisplay[line].scroll)  // does not work for scrolling text
+       { // Serial.print("line="); Serial.println(line);
+         if(MyDisplay[line].blinkold != bBlinkDisplay)
+         { MyDisplay[line].blinkold = bBlinkDisplay;
+           // Serial.print("BlinkTimer10mS="); Serial.println(BlinkTimer10mS);
+           tft.setTextDatum(TC_DATUM); // horizontally centered for text that is not scrolling
+           tw = MyDisplay[line].pixelwidth;
+           if (tw > (320-40))tw = (320-40);
+           tft.setViewport(0, (line * 40), 320, 40, true);
+           if(tw>0) 
+           { if(!bBlinkDisplay) // print normal
+             { tft.setTextColor(MyDisplay[line].textcolor, MyDisplay[line].backgroundcolor, true);
+               tft.drawString(MyDisplay[line].content, 320/2, TYOFF); // centered around x coordinate 120
+             }
+             else // print nothing as part of the blink display
+             { if(MyDisplay[line].canvascolor<0)
+               { tft.fillRoundRect(  ((320 - tw) / 2) - 15   ,  2, tw + 30, 32, 16, MyDisplay[line].backgroundcolor); 
+               }
+               else
+               { tft.fillSmoothRoundRect(((320 - tw) / 2) - 15, 2, tw+30, 32, 16, MyDisplay[line].backgroundcolor, MyDisplay[line].canvascolor);
+               }
+             }
+           } 
+         }
+       }
+       
+     } 
+  
+     if(bScrollNow == true) // set true again every 50mS by interrupt
+     { bScrollNow = false; 
+       for (line = 1; line < 6; line++)
+       { if (MyDisplay[line].scroll)
+         { if(MyDisplay[line].scrolldelay)
+           { if(MyDisplay[line].scrolldelay==20)bUpdateDisplay = true; // force print first time 
+             MyDisplay[line].scrolldelay--;
+           }
+           if(!MyDisplay[line].scrolldelay || MyDisplay[line].scrolldelay==19)
+           { if(MyDisplay[line].scrolldelay)MyDisplay[line].scrolldelay--;
+             startMillis = micros();
+            TextDatum = tft.getTextDatum();
+            tft.setTextDatum(TL_DATUM);
+
+            if (MyDisplay[line].scrollpos >= MyDisplay[line].pixelwidth)
+            { MyDisplay[line].scrollpos = 0;
+            }
         
-       if (MyDisplay[line].scrollpos==0)
-       { MyDisplay[line].nchar = 0;
-         MyDisplay[line].toeat = 0;
-       }
+            if (MyDisplay[line].scrollpos==0)
+            { MyDisplay[line].nchar = 0;
+              MyDisplay[line].toeat = 0;
+            }
 
-       int c;
-       if(MyDisplay[line].toeat<1)
-       { c = MyDisplay[line].content[MyDisplay[line].nchar];
-         if(MyDisplay[line].nchar==0) MyDisplay[line].toeat = TablegxAdvance[c] -  TablegdX[c];
-         else MyDisplay[line].toeat =   TablegxAdvance[c];   
-         MyDisplay[line].noffset = MyDisplay[line].toeat;
-         MyDisplay[line].nchar++;
-       }
+            int c;
+            if(MyDisplay[line].toeat<1)
+            { c = MyDisplay[line].content[MyDisplay[line].nchar];
+             if(MyDisplay[line].nchar==0) MyDisplay[line].toeat = TablegxAdvance[c] -  TablegdX[c];
+             else MyDisplay[line].toeat =   TablegxAdvance[c];   
+             MyDisplay[line].noffset = MyDisplay[line].toeat;
+            MyDisplay[line].nchar++;
+            }
   
-       if(bUpdateDisplay) // set true every 100mS for a 10 frames per seconde update
-       { tft.setViewport((MyDisplay[line].rounded ? 25 : 3), (line * 40), (320 - (MyDisplay[line].rounded ? 50 : 6)), 40); // bigger viewport for square box
-         tft.setTextColor(MyDisplay[line].textcolor, MyDisplay[line].backgroundcolor, true);
-         tft.drawString(&MyDisplay[line].content[MyDisplay[line].nchar-1], MyDisplay[line].toeat - MyDisplay[line].noffset, TYOFF);
-         if((MyDisplay[line].pixelwidth - MyDisplay[line].scrollpos) < (320-25))
-         { tft.drawString(MyDisplay[line].content, MyDisplay[line].pixelwidth - MyDisplay[line].scrollpos, TYOFF);
-         }
-       }
+            if(bUpdateDisplay) // set true every 100mS for a 10 frames per seconde update
+            { tft.setViewport((MyDisplay[line].rounded ? 20 : 3), (line * 40), (320 - (MyDisplay[line].rounded ? 40 : 6)), 34); // bigger viewport for square box
+              tft.setTextColor(MyDisplay[line].textcolor, MyDisplay[line].backgroundcolor, true);
+              if(!MyDisplay[line].blink || !bBlinkDisplay) // print normal
+              { MyDisplay[line].blinkold = bBlinkDisplay;
+                tft.drawString(&MyDisplay[line].content[MyDisplay[line].nchar-1], MyDisplay[line].toeat - MyDisplay[line].noffset, TYOFF);
+                if((MyDisplay[line].pixelwidth - MyDisplay[line].scrollpos) < (320-25)) // print second part
+                { tft.drawString(MyDisplay[line].content, MyDisplay[line].pixelwidth - MyDisplay[line].scrollpos, TYOFF);
+                }
+              }
+              else
+              { if(MyDisplay[line].blinkold != bBlinkDisplay)
+                { MyDisplay[line].blinkold = bBlinkDisplay;  
+                  tft.fillRect(0, 2, (320-(MyDisplay[line].rounded ? 40 : 6)), 32, MyDisplay[line].backgroundcolor); 
+          
+          //        tft.drawString("************************************************", MyDisplay[line].toeat - MyDisplay[line].noffset, TYOFF);
+                }  
+              }
+            }
   
-       MyDisplay[line].toeat -=1;
-       MyDisplay[line].scrollpos++;
+            MyDisplay[line].toeat -=1;
+            MyDisplay[line].scrollpos++;
 
-       // restore TextDatum
-       tft.setTextDatum(TextDatum);
-       }
-     }
-   }
-   bUpdateDisplay = false;
-   tft.setViewport(0, 0, 320, 240, true);
-  }
+            // restore TextDatum
+            tft.setTextDatum(TextDatum);
+          }
+        }
+      }
+      bUpdateDisplay = false;
+      tft.setViewport(0, 0, 320, 240, true);
+    }  
+  
   //Serial.println("En los2");
 
-  if(ActLcdMode == HANI_HAND || EditMenu == SETUP_CALIBRATE || ActLcdMode == HANI_AUTO)
-  { if((OldWeight != NewWeight) || (bScaleStable != boldscalestable))
-    { OldWeight = NewWeight;
-      boldscalestable = bScaleStable;
-      UseFont(Arialbd72);
-      // print it 
-      sprintf(text, "    %d    ", NewWeight);
-      tft.setTextDatum(TC_DATUM);
-      if(bScaleStable)tft.setTextColor(TFT_GREEN, MyDisplay[1].canvascolor, true);
-      else tft.setTextColor(TFT_RED, MyDisplay[1].canvascolor, true);
-      tft.drawString(text, 320/2, 60);
+    if(ActLcdMode == HANI_HAND || EditMenu == SETUP_CALIBRATE || ActLcdMode == HANI_AUTO)
+    { if((OldWeight != NewWeight) || (bScaleStable != boldscalestable))
+      { OldWeight = NewWeight;
+        boldscalestable = bScaleStable;
+        UseFont(Arialbd72);
+        // print it 
+        sprintf(text, "    %d    ", NewWeight);
+        tft.setTextDatum(TC_DATUM);
+        if(bScaleStable)tft.setTextColor(TFT_GREEN, MyDisplay[1].canvascolor, true);
+        else tft.setTextColor(TFT_RED, MyDisplay[1].canvascolor, true);
+        // set viewport to 'protect the jar icon, but put text still in the exact middle of screen
+        tft.setViewport(62+5, 61, 320 - 67, 54); 
+        tft.drawString(text, (320/2)-67, 0);
+        tft.setViewport(0, 0, 320, 240); 
+        UseFont(Arialnarrow26);
+      }  
+    }
+
+    if(TheAngles.refresh)
+    { tft.setViewport(0, 0, 320, 240, true);
+      if(TheAngles.backgroundcolor != TheAngles.oldbackgroundcolor)
+      { tft.fillRect(0, 35, 320, 54-35, TheAngles.backgroundcolor);
+        TheAngles.oldbackgroundcolor = TheAngles.backgroundcolor;
+      }
+      UseFont(Tahoma18);
+      // TextDatum = tft.getTextDatum();
+      tft.setTextDatum(BC_DATUM);
+      tft.setTextColor(TheAngles.textcolor, TheAngles.backgroundcolor, true);
+      tft.drawString(TheAngles.content, 320/2, 54);
       UseFont(Arialnarrow26);
-    }  
+      // tft.setTextDatum(TextDatum);
+      TheAngles.refresh = false;
+    }
+
+    // work to be done on the jar icon?
+    if(ActLcdMode == HANI_AUTO)
+    { if(JarIconFilled != OldJarIconFilled || JarIconFilledColor != OldJarIconFilledColor)
+      { tft.setViewport(8, 79, 50, 69, true);
+        //tft.fillRoundRect(0, 2, 320, 32, 0, MyDisplay[line]. canvascolor); // radius 0 makes it a square
+
+        if(JarIconFilledColor != OldJarIconFilledColor)OldJarIconFilled=0; // color change, redraw entire jar 
+
+        OldLevel = OldJarIconFilled;
+        if(JarIconFilledColor != OldJarIconFilledColor)OldLevel=68; // color change, redraw entire jar 
+
+        // draw empty lines above level in jar
+        if(JarIconFilled<OldLevel)
+        { for(line=OldLevel; line>=JarIconFilled;line--) // top down
+          { //tft.drawLine(0, 68-line, 52, 68-line, TFT_BLACK);
+            // tft.drawLine(52-(linelengths[line]), 68-line, linelengths[line], 68-line, TFT_BLUE);
+            tft.drawLine((52-linelengths[line])/2, 68-line, linelengths[line], 68-line, TFT_BLACK);
+          }
+        }
+        if(JarIconFilledColor != OldJarIconFilledColor)OldLevel=0; // color change, redraw entire jar 
+        // draw colored lines, up to the level in jar
+        if(JarIconFilled>OldLevel)
+        { // linelengths[line] dictates dimension of line to draw
+          for(line=OldLevel; line<JarIconFilled;line++) // bottom up
+          { tft.drawLine((52-linelengths[line])/2, 68-line, linelengths[line], 68-line, JarIconFilledColor);
+          }
+      
+          for(line=OldLevel; line<JarIconFilled;line++) // bottom up
+          { //tft.drawLine(0, 68-line, 52, 68-line, JarIconFilledColor);
+          }
+
+        }
+        //  tft.fillRect(0, 68-JarIconFilled, 52, JarIconFilled, TFT_BLUE );
+        OldJarIconFilled = JarIconFilled;
+        OldJarIconFilledColor = JarIconFilledColor;
+        tft.setViewport(0, 0, 320, 240, true);
+      }
+    }
+    xSemaphoreGive(xDisplayMutex);  
   }
-  xSemaphoreGive(xDisplayMutex);  
- }
 }
 
 

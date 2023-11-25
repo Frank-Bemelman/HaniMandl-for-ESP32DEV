@@ -35,6 +35,7 @@
 #define HANI_HAND 3  // manual operation display
 #define HANI_MENU 4  // new style menu
 
+// menus present in setup
 #define SETUP_STARTOFMENU 0
 #define SETUP_TARRA 0
 #define SETUP_CALIBRATE 1
@@ -44,10 +45,9 @@
 #define SETUP_PARAMS 5
 #define SETUP_COUNTERS 6
 #define SETUP_BATCHES 7
-#define SETUP_INA219 8
-#define SETUP_RESET 9
-#define SETUP_LANGUAGE 10
-#define SETUP_ENDOFMENU 10 // adjust this as menu gets expanded
+#define SETUP_RESET 8
+#define SETUP_LANGUAGE 9
+#define SETUP_ENDOFMENU 9 // adjust this as menu gets expanded
 
 
 
@@ -64,8 +64,11 @@ struct TFTline
   int  toeat;
   int  noffset;
   int  textcolor;
+  int  oldtextcolor;
   int  backgroundcolor;
+  int  oldbackgroundcolor;
   int  canvascolor;
+  int  oldcanvascolor;
   bool blink;
   bool blinkold;
   int  lastpixelwidth;
@@ -134,23 +137,20 @@ struct Menu
 #define LIVESETUP 6
 #define SERVOMIN 7
 #define SERVOFINEDOS 8
-#define SERVOMAX 9
+#define SERVOMAXDOS 9
 
-#define JARSUSED 10
+#define CHOSENPRODUCT 10
 #define MANUALTARRA 11
+
+#define SERVOMAXCURRENT 12
+#define SLOWDOWNPERCENT 13
 
 #define JARARRAY 22
 
 #define BUZZER 28
 #define LED 29
-
-
-#define LANGUAGE 36
-
-
-
-
-#define LASTPARAMETER 100
+#define LANGUAGE 30
+#define LASTPARAMETER 50
 
 // types of parameters to edit
 #define SET_JAR_PRESET 0
@@ -159,7 +159,7 @@ struct Menu
 #define SET_GRAMS 3
 #define SET_INTEGER 4
 #define SET_DEGREES 5
-#define SET_CURRENT 6
+#define SET_MILLIAMPSMAX 6
 #define SET_LANGUAGE 7
 #define SET_TARRA 8
 #define SET_TO_ZERO 9
@@ -168,6 +168,10 @@ struct Menu
 #define RESETPREFS 12
 #define RESETEEPROM 13
 #define SET_GRAM_TOLERANCE 14
+#define SET_CHOSEN 15
+#define SET_PERCENT 16
+
+
 
 
 // language stuff, lot todo
@@ -205,7 +209,7 @@ struct rotary {
 
 #define WEIGHT_EMPTY_SCALE 0
 #define WEIGHT_EMPTY_JAR 1
-#define WEIGHT_FILLING_JAR 2
+#define WEIGHT_PARTIAL_JAR 2
 #define WEIGHT_FULL_JAR 3
 
 #define DOSING_STOPPED 0

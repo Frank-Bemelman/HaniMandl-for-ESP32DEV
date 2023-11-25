@@ -37,30 +37,30 @@ Menu BigMenu[] =
         "Set The Parameters For Automatic Filling",
         "Full Auto Start", 0, 1, 1, 0, AUTOSTART,  SET_ON_OFF,
         "Jar Tolerance", 0, 100, 20, 0, AUTO_JAR_TOLERANCE, SET_GRAM_TOLERANCE, 
-        "Correction", 0, 100, 20, 0, CORRECTION, SET_GRAMS,
+        "Correction", -100, 0, -20, 0, CORRECTION, SET_GRAMS,
         "Auto Correction", 0, 1, 0, 0, AUTO_CORRECTION, SET_ON_OFF,
         "Coulance", 0, 100, 7, 0, COULANCE, SET_GRAMS,
-        "Last One", 0, 100, 50, 0, NOT_USED, SET_GRAMS, //COULANCE, 
+        "Slow Down Filling At ", 25, 75, 50, 0, SLOWDOWNPERCENT, SET_PERCENT,
         "Exit", 1,   // exit mode & columns
 
         "5 - Servo Adjustment",
         "Sets The Limits For Your Servo Valve",
         "Live Setup", 0, 1, 1, 1, LIVESETUP, SET_ON_OFF,
         "Minimum", 0, 30, 5, 1, SERVOMIN, SET_DEGREES,
-        "Maximum", 150, 180, 85, 1, SERVOMAX, SET_DEGREES,
-        "Fine Dosage", 10, 150, 35, 1, SERVOFINEDOS, SET_DEGREES,
-        "", 0, 100, 50, 1, NOT_USED, SET_DEGREES,
+        "Maximum", 60, 180, 120, 1, SERVOMAXDOS, SET_DEGREES,
+        "Fine Dosage", 10, 150, 75, 1, SERVOFINEDOS, SET_DEGREES,
+        "DC Max Current", 50, 1000, 500, 1, SERVOMAXCURRENT, SET_MILLIAMPSMAX,
         "", 0, 100, 50, 1, NOT_USED, SET_DEGREES,
         "Exit", 1,   // exit mode & columns
 
         "6 - System Parameters",
         "Sets The General Parameters And Options",
-        "Buzzer", 0, 1, 1, 1, BUZZER, SET_ON_OFF,
-        "Led Indicator", 0, 1, 1, 1, LED, SET_ON_OFF,
-        "Jar Types In Use", 1, 6, 6, 1, JARSUSED, SET_INTEGER,
-        "", 0, 100, 50, 1, NOT_USED, SET_INTEGER,
-        "", 0, 100, 50, 1, NOT_USED, SET_INTEGER,
-        "", 0, 100, 50, 1, NOT_USED, SET_INTEGER,
+        "Buzzer", 0, 1, 1, 0, BUZZER, SET_ON_OFF,
+        "Led Indicator", 0, 1, 1, 0, LED, SET_ON_OFF,
+        "Default Product", 0, 5, 0, 0, CHOSENPRODUCT, SET_CHOSEN,
+        "", 0, 100, 50, 0, NOT_USED, SET_INTEGER,
+        "", 0, 100, 50, 0, NOT_USED, SET_INTEGER,
+        "", 0, 100, 50, 0, NOT_USED, SET_INTEGER,
         "Exit", 1,   // exit mode & columns
        
         "7 - Reset Counters",
@@ -83,17 +83,7 @@ Menu BigMenu[] =
         "A", 0, 100, 10, 1, JARARRAY, SET_TRIPCOUNT,
         "Exit", 1,   // exit mode & columns
         
-        "9 - INA219 Setup",
-        "Sets The INA219 Servo Current Parameter",
-        "A", 0, 100, 50, 1, NOT_USED, SET_CURRENT,
-        "A", 0, 100, 50, 1, NOT_USED, SET_CURRENT,
-        "A", 0, 100, 50, 1, NOT_USED, SET_CURRENT,
-        "A", 0, 100, 50, 1, NOT_USED, SET_CURRENT,
-        "A", 0, 100, 50, 1, NOT_USED, SET_CURRENT,
-        "A", 0, 100, 50, 1, NOT_USED, SET_CURRENT,
-        "Exit", 1,   // exit mode & columns
-       
-        "10 - Default Reset",
+        "9 - Default Reset",
         "Resets All Parameters To Standard Values",
         "Factory Reset", 0, 0, 0, 1, RESETPREFS, RESETPREFS,
         "Format Eeprom", 0, 0, 0, 1, RESETEEPROM, RESETEEPROM,
@@ -103,7 +93,7 @@ Menu BigMenu[] =
         "", 0, 100, 50, 1, NOT_USED, SET_YES_NO,
         "Exit", 1,   // exit mode & columns
 
-        "11 - Set Language",
+        "10 - Set Language",
         "Choose One Of The Supported Languages",
         "ENGLISH", 0, 0, 0, 1, LANGUAGE, SET_LANGUAGE,
         "GERMAN",  1, 1, 1, 1, LANGUAGE, SET_LANGUAGE,

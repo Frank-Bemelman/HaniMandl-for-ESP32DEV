@@ -5,6 +5,10 @@ First, thanks to all contributors for their work and inspiration. I decided to m
 Changes are mostly cosmetic. Needs a 320x240 tft display, ST7789 model. Uses antialiased fonts for nicer display
 Use of graphic image as startup screen
 
+1) ESP8266 controller (D1 mini or similar
+![alt text](pictures/IMG_1778.jpg)
+<br>
+
 If you want to use ILI9341 display, see platformio.ini for build flags, and change ST7789_DRIVER=1 to ILI9341_DRIVER=1 
 
 Is tailored to platformio which I prefer over the Arduino IDE

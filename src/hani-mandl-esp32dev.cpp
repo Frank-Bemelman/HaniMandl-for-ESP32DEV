@@ -1378,7 +1378,7 @@ void buzzer(int sound)
       BeepLength = 100;   
       break;
     case BUZZER_SUCCESS:
-      BeepTimes = 3;   
+      BeepTimes = 5;   
       BeepLength = 100;   
       break;
     case BUZZER_LONG:

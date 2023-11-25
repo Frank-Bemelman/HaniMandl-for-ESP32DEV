@@ -358,6 +358,7 @@ void ParameterMenu(int menu)
    { if(IsPulsed(&bStopButtonPulsed) || !deb_setup_switch)
      { if(state==4) // stop button and setup switch works as cancel while fiddling with the value
        { TFT_line_blink(editline-scrollpos+1,false); // unblink
+         BigMenu[menu].line[editline].selected = false;
          if(BigMenu[menu].line[editline].parmtype == SET_TARRA)TFT_line_color(editline-scrollpos+1, TFT_WHITE, TFT_BLACK); // back to normal
          if(BigMenu[menu].line[editline].parmtype == SET_JAR_PRESET)
          { Products[editline].Gewicht = restorevalue;

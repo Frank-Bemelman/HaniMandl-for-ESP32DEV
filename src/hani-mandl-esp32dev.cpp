@@ -997,7 +997,7 @@ void processHandbetrieb(void)
   if(bScaleStable)
   { if(GramsOnScale<10)weight_status = WEIGHT_EMPTY_SCALE;
     else if(abs(GramsOnScale - SysParams[MANUALTARRA]) <= SysParams[AUTO_JAR_TOLERANCE])weight_status = WEIGHT_EMPTY_JAR;
-    else weight_status = WEIGHT_HALF_JAR;
+    else weight_status = WEIGHT_PARTIAL_JAR;
     //sprintf(text, "weight_status =  %d net-%d", weight_status, net_weight);
     //TFT_line_print(4, text);
   

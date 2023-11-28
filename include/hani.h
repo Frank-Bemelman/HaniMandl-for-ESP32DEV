@@ -44,10 +44,8 @@
 #define SETUP_SERVO 4
 #define SETUP_PARAMS 5
 #define SETUP_COUNTERS 6
-#define SETUP_BATCHES 7
-#define SETUP_RESET 8
-#define SETUP_LANGUAGE 9
-#define SETUP_ENDOFMENU 9 // adjust this as menu gets expanded
+#define SETUP_RESET 7
+#define SETUP_ENDOFMENU 7 // adjust this as menu gets expanded
 
 
 
@@ -80,7 +78,6 @@ struct TFTline
 // structure that describes the various jars we use
 struct JarType
 { char name[32];
-  char shortname[4];
   int tarra; // weight of empty jar
 };
 
@@ -88,7 +85,7 @@ struct JarType
 struct ProductParameter { 
   int Gewicht;
   int GlasTyp;
-  int TripCount;
+  int NotUsed; // not used anymore (was tripcount)
   int Count;
 };
 
@@ -118,10 +115,12 @@ struct MenuLine
 };
 
 struct Menu
-{ char menuname[32];
-  char menuheader[64];
+{ int menuidx; // from the language defines in language.h
+  // char menuname[32];
+  int longdescriptionidx;
+  //char menuheader[64];
   MenuLine line[6];
-  char bottomline[32];
+//  char bottomline[32];
   int columns;
 }; 
 
@@ -136,14 +135,17 @@ struct Menu
 
 #define LIVESETUP 6
 #define SERVOMIN 7
-#define SERVOFINEDOS 8
-#define SERVOMAXDOS 9
+#define SERVOSLOWDOS 8
+#define SERVOFASTDOS 9
 
 #define CHOSENPRODUCT 10
 #define MANUALTARRA 11
 
 #define SERVOMAXCURRENT 12
 #define SLOWDOWNPERCENT 13
+#define LASTMENUSED 14 // last used setup menu
+#define CALWEIGHT 15 // the weight of the calibration standard
+
 
 #define JARARRAY 22
 
@@ -163,34 +165,20 @@ struct Menu
 #define SET_LANGUAGE 7
 #define SET_TARRA 8
 #define SET_TO_ZERO 9
-#define SET_TRIPCOUNT 10
-#define SET_CLICK 11
-#define RESETPREFS 12
-#define RESETEEPROM 13
-#define SET_GRAM_TOLERANCE 14
-#define SET_CHOSEN 15
-#define SET_PERCENT 16
+#define SET_CLICK 10
+#define RESETPREFS 11
+#define RESETEEPROM 12
+#define SET_GRAM_TOLERANCE 13
+#define SET_CHOSEN 14
+#define SET_PERCENT 15
 
 
 
 
-// language stuff, lot todo
-
-#define LNG_FIRST 0
-#define LNG_SET_TARA_VAL 0
-#define LNG_CALIBRATE_SCALE 1
-#define LNG_WEIGTH_PRESET 2
-#define LNG_SAVE_AND_EXIT 3
-#define LNG_LAST 4
-
-struct Trans
-{ int  index; // a define value such as LNG_SET_TARA_VAL
-  char name[6][32]; // 6 translations of one text
-};
 
 // Denstrukturen für Rotary Encoder
 struct rotary {                        
-  int Value[3];
+  int Value[3]; // keeping the last three values, that are shifted from Value[2] to Value[1] to Value[0] every 10mS
   int Minimum;
   int Maximum;
   int Step;
@@ -202,7 +190,7 @@ struct rotary {
 #define SCALE_WAIT_RESUME 3
 #define SCALE_WILL_START 4
 #define SCALE_WILL_RESUME 5
-#define SCALE_JAR_FILL_FULL_SPEED 6
+#define SCALE_JAR_FILL_FAST_SPEED 6
 #define SCALE_JAR_FILL_SLOW_SPEED 7
 #define SCALE_JAR_FILLING_PAUSED 8
 #define SCALE_JAR_FILLED 9
@@ -214,6 +202,8 @@ struct rotary {
 
 #define DOSING_STOPPED 0
 #define DOSING_WAIT_START 1
-#define DOSING_FULL 2
-#define DOSING_FINE 3
+#define DOSING_FAST 2
+#define DOSING_SLOW 3
+#define DOSING_FINISHED 4
+#define DOSING_NEEDS_EXPECTED_TARRA 5
 

@@ -9,16 +9,18 @@
 #include <Adafruit_INA219.h>        /* aus dem Bibliotheksverwalter */
 #include <Preferences.h>            /* aus dem BSP von expressif, wird verfügbar wenn das richtige Board ausgewählt ist */
 #include <nvs_flash.h>              /* aus dem BSP von expressif, wird verfügbar wenn das richtige Board ausgewählt ist */
-#include <Arduino_GFX_Library.h>    /* aus dem Bibliotheksverwalter */
+//#include <Arduino_GFX_Library.h>    /* aus dem Bibliotheksverwalter */
 #include <TFT_eSPI.h>               // more versatile display library
 
 #include "hani.h"
 #include "Arialbd72.h"
 #include <HX711_ADC.h>
+
+#define TRANS
+#include "language.h"
 #include "menustructure.h"
 
-// Version
-String version = "V1.0 by F.";
+
 extern void SetupMyDisplay(void);
 //extern void TFT_line_print(int line, const char *content);
 extern void TFT_line_print(int line, const char *content, bool blink = false);
@@ -76,8 +78,6 @@ extern bool bScaleStable;
 
 
 // setup menu 
-int LastMenu = 0;    // last menu used, for comfortable re-entry
-int CurrentMenu = 0; // 
 int EditMenu = 0; // 
 
 
@@ -115,23 +115,23 @@ void LoadParameters(void);
 Adafruit_INA219 ina219;
 
 
-Arduino_DataBus *bus = new Arduino_HWSPI(13 /* DC */, 5 /* CS */);
-Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
+//Arduino_DataBus *bus = new Arduino_HWSPI(13 /* DC */, 5 /* CS */);
+//Arduino_GFX *gfx = new Arduino_ST7789(bus, 14 /* RST */, 3 /* rotation */);
 //Arduino_GFX *gfx;
 
 // Fonts
-#include "./Fonts/Punk_Mono_Bold_120_075.h"           //10 x 7
-#include "./Fonts/Punk_Mono_Bold_160_100.h"           //13 x 9
-#include "./Fonts/Punk_Mono_Bold_200_125.h"           //16 x 12
-#include "./Fonts/Punk_Mono_Bold_240_150.h"           //19 x 14
+//#include "./Fonts/Punk_Mono_Bold_120_075.h"           //10 x 7
+//#include "./Fonts/Punk_Mono_Bold_160_100.h"           //13 x 9
+//#include "./Fonts/Punk_Mono_Bold_200_125.h"           //16 x 12
+//#include "./Fonts/Punk_Mono_Bold_240_150.h"           //19 x 14
 //#include "./Fonts/Punk_Mono_Bold_280_175.h"          //22 x 16
-#include "./Fonts/Punk_Mono_Bold_320_200.h"           //25 x 18
-#include "./Fonts/Punk_Mono_Bold_600_375.h"           //48 x 36
-#include "./Fonts/Punk_Mono_Thin_120_075.h"           //10 x 7
-#include "./Fonts/Punk_Mono_Thin_160_100.h"           //13 x 9
-#include "./Fonts/Punk_Mono_Thin_240_150.h"           //19 x 14
-#include "./Fonts/Icons_Start_Stop.h"                 //A=Start, B=Stop, M=Rahmen
-#include "./Fonts/Checkbox.h"                         //A=OK, B=nOK
+//#include "./Fonts/Punk_Mono_Bold_320_200.h"           //25 x 18
+//#include "./Fonts/Punk_Mono_Bold_600_375.h"           //48 x 36
+//#include "./Fonts/Punk_Mono_Thin_120_075.h"           //10 x 7
+//#include "./Fonts/Punk_Mono_Thin_160_100.h"           //13 x 9
+//#include "./Fonts/Punk_Mono_Thin_240_150.h"           //19 x 14
+//#include "./Fonts/Icons_Start_Stop.h"                 //A=Start, B=Stop, M=Rahmen
+//#include "./Fonts/Checkbox.h"                         //A=OK, B=nOK
 
 // new display control with TFT_eSPI
 // Display ST7789 - set per build flags in platformio.ini
@@ -154,8 +154,8 @@ Preferences preferences;
 struct rotary rotaries[3]; // will be initialized in setup()
 int rotary_select = SW_WINKEL;
 
-JarType JarTypes[6] = {{"DE Imker Bund","DIB",-9999},{"TwistOff","TOF",-9999},{"DeepTwist","DEE",-9999},{"Special Jar","SPX",-9999},{"Ferry's DeLuxe","FDL",-9999},{"Eco Jar","ECO",-9999}}; // name and shortname
-ProductParameter Products[6] = {{125, 0, 0, 0}, // net weight, jar type, tripcount, counter
+JarType JarTypes[6] = {{"DE Imker Bund",-9999},{"TwistOff",-9999},{"DeepTwist",-9999},{"Special Jar",-9999},{"Ferry's DeLuxe",-9999},{"Eco Jar",-9999}}; // name and shortname
+ProductParameter Products[6] = {{125, 0, 0, 0}, // net weight, jar type, notused, counter
                         {250, 1, 0, 0},
                         {250, 2, 0, 0},
                         {500, 1, 0, 0},
@@ -174,7 +174,6 @@ int fmenge;                         // ausgewählte Füllmenge
 int winkel;                         // aktueller Servo-Winkel
 float fein_dosier_gewicht = 60;     // float wegen Berechnung des Schliesswinkels
 int servo_aktiv = 0;                // Servo aktivieren ja/nein
-int kali_gewicht = 500;             // frei wählbares Gewicht zum kalibrieren
 char ausgabe[256];                  // FB: Increased lenght for use with long scrolling texts
 int modus = -1;                     // Bei Modus-Wechsel den Servo auf Minimum fahren
 int auto_aktiv = 0;                 // Für Automatikmodus - System ein/aus?
@@ -254,10 +253,6 @@ void IRAM_ATTR isr1() {
         rotary_select_alt = SW_KORREKTUR;
         korr_alt = -99999;
       }
-      #ifdef isDebug
-        Serial.print("Rotary Button changed to ");
-        Serial.println(rotary_select);
-      #endif 
     }
     last_interrupt_time = interrupt_time;
   }
@@ -271,19 +266,47 @@ void IRAM_ATTR isr2() {
   static int aState;
   static int bState;
   static int aLastState;
+  static int lastmillis;
+  static int actmillis;
+  static int speedmultiplier;
+  static int newvalue;
+  static int timepassed;
+  static int multipliers[] = {1,2,4,8,16,32,64};
+
   aState = digitalRead(ROTARY_ENCODER_A); // Reads the "current" state of the encoder
   bState = digitalRead(ROTARY_ENCODER_B); // Reads the "current" state of the encoder
-  if (aState != aLastState) {     
+  if (aState != aLastState) 
+  { // speed of rotation calculation
+    // single channel puls/pauze is 25mS when turning slow, 10mS for nice turn, 5mS for fast, 2.5ms for a very aggressive twist
+    actmillis = millis();
+    
+    timepassed = actmillis - lastmillis;
+//    Serial.println(timepassed);
+    speedmultiplier = 0;
+    if((timepassed < 26) && (timepassed>1))
+    { timepassed = 26-timepassed;
+      while(timepassed>0)
+      { speedmultiplier++;
+        timepassed -= 5;
+      }
+//      Serial.print("Speed=");
+//      Serial.println(speedmultiplier);
+    }
+    speedmultiplier = multipliers[speedmultiplier];
+
+    lastmillis = actmillis;
+    newvalue = rotaries[rotary_select].Value[2];
     // If the outputB state is different to the outputA state, that means the encoder is turned clockwise
     if (aState != bState) {
-      rotaries[rotary_select].Value[2] -= rotaries[rotary_select].Step;
+      newvalue -= rotaries[rotary_select].Step * speedmultiplier;
     }
     else {    // counter-clockwise
-      rotaries[rotary_select].Value[2] += rotaries[rotary_select].Step;
+      newvalue += rotaries[rotary_select].Step * speedmultiplier;
     }
-    rotaries[rotary_select].Value[2] = constrain( rotaries[rotary_select].Value[2], rotaries[rotary_select].Minimum, rotaries[rotary_select].Maximum);
+    rotaries[rotary_select].Value[2] = constrain( newvalue, rotaries[rotary_select].Minimum, rotaries[rotary_select].Maximum);
   }
   aLastState = aState; 
+  
 }
 
 //
@@ -305,16 +328,6 @@ void initRotaries( int rotary_mode, int rotary_value, int rotary_min, int rotary
   rotaries[rotary_mode].Minimum   = rotary_min   * ROTARY_SCALE;
   rotaries[rotary_mode].Maximum   = rotary_max   * ROTARY_SCALE;
   rotaries[rotary_mode].Step      = rotary_step;
-  #ifdef isDebug
-    Serial.print("initRotaries..."); 
-    Serial.print(" Rotary Mode: ");  Serial.print(rotary_mode);
-    Serial.print(" rotary_value: "); Serial.print(rotary_value);
-    Serial.print(" Value: ");        Serial.print(rotaries[rotary_mode].Value);
-    Serial.print(" Min: ");          Serial.print(rotaries[rotary_mode].Minimum);
-    Serial.print(" Max: ");          Serial.print(rotaries[rotary_mode].Maximum);
-    Serial.print(" Step: ");         Serial.print(rotaries[rotary_mode].Step);
-    Serial.print(" Scale: ");        Serial.println(ROTARY_SCALE);
-  #endif
 }
 // Ende Funktionen für den Rotary Encoder
 //
@@ -335,102 +348,7 @@ boolean EncoderButtonPressed(void)
 
 
 
-void getPreferences(void) {
-  preferences.begin("EEPROM", false);                     // Parameter aus dem EEPROM lesen
-  pos             = preferences.getUInt("pos", 0);
-  kali_gewicht    = preferences.getUInt("kali_gewicht", kali_gewicht);
-  show_current    = preferences.getUInt("show_current", show_current);
-  preferences_chksum = pos +  kali_gewicht + show_current;
-
-                        
-
-
-
-  i = 0;
-  int ResetGewichte[] = {125,250,250,500,500,};
-  int ResetGlasTyp[] = {0,1,2,1,0,};
-  while( i < 5) {
-    sprintf(ausgabe, "Gewicht%d", i);
-//    Products[i].Gewicht = preferences.getInt(ausgabe, ResetGewichte[i]);
-    preferences_chksum += Products[i].Gewicht;
-    sprintf(ausgabe, "GlasTyp%d", i);
-//    Products[i].GlasTyp = preferences.getInt(ausgabe, ResetGlasTyp[i]);
-    preferences_chksum += Products[i].GlasTyp;
-    sprintf(ausgabe, "Tara%d", i);
-//    JarTypes[i].tarra= preferences.getInt(ausgabe, -9999);
-    preferences_chksum += JarTypes[i].tarra;
-    sprintf(ausgabe, "TripCount%d", i);
-//    Products[i].TripCount = preferences.getInt(ausgabe, 0);
-    preferences_chksum += Products[i].TripCount;
-    sprintf(ausgabe, "Count%d", i);
-//    Products[i].Count = preferences.getInt(ausgabe, 0);
-    preferences_chksum += Products[i].Count;
-    i++;
-  }
-  preferences.end();
-}
-
-void setPreferences(void) {
-  long preferences_newchksum;
-  int winkel = getRotariesValue(SW_WINKEL);
-  int i;
-  preferences.begin("EEPROM", false);
-  // Winkel-Einstellung separat behandeln, ändert sich häufig
-  if ( winkel != preferences.getUInt("pos", 0) ) {
-    preferences.putUInt("pos", winkel);
-    #ifdef isDebug
-      Serial.print("winkel gespeichert: ");
-      Serial.println(winkel);
-    #endif
-  }
-  // Product Counter separat behandeln, ändert sich häufig
-  for ( i=0 ; i < 5; i++ ) {
-    sprintf(ausgabe, "TripCount%d", i);
-    if (Products[i].TripCount != preferences.getInt(ausgabe, 0)) {
-      preferences.putInt(ausgabe, Products[i].TripCount);
-    }
-    sprintf(ausgabe, "Count%d", i);
-    if (Products[i].Count != preferences.getInt(ausgabe, 0)) {
-      preferences.putInt(ausgabe, Products[i].Count);
-    }
-  }
-  // Den Rest machen wir gesammelt, das ist eher statisch
-  preferences_newchksum = pos + kali_gewicht + show_current;
-
-
-  i = 0;
-  while( i < 5 ) {
-    preferences_newchksum += Products[i].Gewicht;
-    preferences_newchksum += Products[i].GlasTyp;
-    preferences_newchksum += JarTypes[i].tarra;
-    i++;
-  }
-  if( preferences_newchksum == preferences_chksum ) {
-    #ifdef isDebug
-      Serial.println("Preferences unverändert");
-    #endif
-    return;
-  }
-  preferences_chksum = preferences_newchksum;
-  preferences.putUInt("kali_gewicht", kali_gewicht);
-  preferences.putUInt("show_current", show_current);
-  i = 0;
-  while( i < 5 ) {
-    sprintf(ausgabe, "Gewicht%d", i);
-    preferences.putInt(ausgabe, Products[i].Gewicht);
-    sprintf(ausgabe, "GlasTyp%d", i);
-    preferences.putInt(ausgabe, Products[i].GlasTyp);  
-    sprintf(ausgabe, "Tara%d", i);
-    preferences.putInt(ausgabe, JarTypes[i].tarra);
-    i++;
-  }
-  preferences.end();
-}
-
-
-
-
-
+/*
 void processAutomatik(void) {
   int zielgewicht;                 // Glas + Korrektur
   static int autokorrektur_gr = 0; 
@@ -533,9 +451,9 @@ void processAutomatik(void) {
     gfx->drawLine(0, 50, 320, 50, COLOR_TEXT);
   }
   pos = getRotariesValue(SW_WINKEL);
-  // nur bis SysParams[SERVOFINEDOS] regeln, oder über initRotaries lösen?
-  if (pos < SysParams[SERVOFINEDOS] * 100 / SysParams[SERVOMIN]) {                      
-    pos = SysParams[SERVOFINEDOS] * 100 / SysParams[SERVOMIN];
+  // nur bis SysParams[SERVOSLOWDOS] regeln, oder über initRotaries lösen?
+  if (pos < SysParams[SERVOSLOWDOS] * 100 / SysParams[SERVOMIN]) {                      
+    pos = SysParams[SERVOSLOWDOS] * 100 / SysParams[SERVOMIN];
     setRotariesValue(SW_WINKEL, pos);
   }
   SysParams[CORRECTION]    = getRotariesValue(SW_KORREKTUR);
@@ -560,7 +478,7 @@ void processAutomatik(void) {
     else TFT_line_print(0, "AUTOMATIC WAITING");
     auto_aktiv    = 1;                            // automatisches Füllen aktivieren
     rotary_select = SW_WINKEL;                    // falls während der Parameter-Änderung auf Start gedrückt wurde    
-    setPreferences();                             // falls Parameter über den Rotary verändert wurden
+//    setPreferences();                             // falls Parameter über den Rotary verändert wurden
     glas_alt = -1;                              // Glas Typ Farbe zurücksetzen fals markiert ist
     korr_alt = -99999;                          // Korrektur Farbe zurücksetzen fals markiert ist
   }
@@ -668,7 +586,6 @@ void processAutomatik(void) {
         sammler_num++;                                      // Korrekturwert für diesen Durchlauf erreicht
       }
       if (voll == true && gezaehlt == false) {
-        Products[SysParams[CHOSENPRODUCT]].TripCount++;
         Products[SysParams[CHOSENPRODUCT]].Count++;
         gezaehlt = true;
       }
@@ -678,7 +595,6 @@ void processAutomatik(void) {
         Serial.print(" gewicht_vorher: "); Serial.print(gewicht_vorher);
         Serial.print(" sammler_num: ");    Serial.print(sammler_num);
         Serial.print(" Korrektur: ");      Serial.println(autokorrektur_gr);
-        Serial.print(" Zähler Trip: ");    Serial.print(Products[SysParams[CHOSENPRODUCT]].TripCount); //Kud
         Serial.print(" Zähler: ");         Serial.println(Products[SysParams[CHOSENPRODUCT]].Count); //Kud
       #endif
     }
@@ -696,15 +612,14 @@ void processAutomatik(void) {
   if (servo_aktiv == 1 && (zielgewicht - gewicht <= fein_dosier_gewicht)) {
     winkel = ((SysParams[SERVOMIN]*pos / 100) * ((zielgewicht-gewicht) / fein_dosier_gewicht) );
   }
-  if (servo_aktiv == 1 && winkel <= SysParams[SERVOFINEDOS]) {
-    winkel = SysParams[SERVOFINEDOS];
+  if (servo_aktiv == 1 && winkel <= SysParams[SERVOSLOWDOS]) {
+    winkel = SysParams[SERVOSLOWDOS];
   }
   // Glas ist voll
   if (servo_aktiv == 1 && gewicht >= zielgewicht) {
     winkel      = SysParams[SERVOMIN] + offset_winkel;
     servo_aktiv = 0;
     if (gezaehlt == false) {
-      Products[SysParams[CHOSENPRODUCT]].TripCount++;
       Products[SysParams[CHOSENPRODUCT]].Count++;
       gezaehlt = true;
     }
@@ -715,22 +630,6 @@ void processAutomatik(void) {
     buzzer(BUZZER_SHORT);
   }
   SERVO_WRITE(winkel);
-  #ifdef isDebug
-    #if isDebug >= 4
-      Serial.print("Automatik:");  
-      Serial.print(" Gewicht: ");        Serial.print(gewicht);
-      Serial.print(" Winkel: ");         Serial.print(winkel);
-      Serial.print(" Dauer ");           Serial.print(millis() - scaletime);
-      Serial.print(" Füllmenge: ");      Serial.print(fmenge);
-      Serial.print(" Korrektur: ");      Serial.print(SysParams[CORRECTION]);
-      Serial.print(" Tara_glas:");       Serial.print(tara_glas);
-      Serial.print(" Autokorrektur: ");  Serial.print(autokorrektur_gr);
-      Serial.print(" Zielgewicht ");     Serial.print(zielgewicht);
-      Serial.print(" Erzwinge Servo: "); Serial.print(erzwinge_servo_aktiv);
-      Serial.print(" servo_aktiv ");     Serial.print(servo_aktiv);
-      Serial.print(" auto_aktiv ");      Serial.println(auto_aktiv);
-    #endif 
-  #endif
   if (bINA219_installed && (SysParams[SERVOMAXCURRENT] > 0 or show_current == 1)) {
     y_offset = 4;
   }
@@ -913,8 +812,9 @@ void processAutomatik(void) {
     i = 0;
     inawatchdog = 1;
   }
-  setPreferences();
+  //setPreferences();
 }
+*/
 
 void processHandbetrieb(void) 
 { static int state = 0;
@@ -986,8 +886,8 @@ void processHandbetrieb(void)
 
   // get encoder value
   pos = getRotariesValue(SW_WINKEL); // value 0-100  
-  desired_angle = (SysParams[SERVOMAXDOS] * pos) / 100;
-  desired_angle = constrain(desired_angle, SysParams[SERVOMIN] + offset_winkel, SysParams[SERVOMAXDOS]);
+  desired_angle = (SysParams[SERVOFASTDOS] * pos) / 100;
+  desired_angle = constrain(desired_angle, SysParams[SERVOMIN] + offset_winkel, SysParams[SERVOFASTDOS]);
 
   // close valve in paused mode
   if(servoactive == 0)SERVO_WRITE(SysParams[SERVOMIN] + offset_winkel);
@@ -1005,19 +905,19 @@ void processHandbetrieb(void)
   
 
   // print the big weight in grams, NewWeight is used by new graphics handling
-  if((weight_status==WEIGHT_EMPTY_SCALE) || (weight_status!=WEIGHT_EMPTY_JAR))
+  if(weight_status==WEIGHT_EMPTY_SCALE)
   { NewWeight = GramsOnScale;
-    TFT_line_print(3, "gram");
+    TFT_line_print(3, GetTrans(LNG_GRAM));
   }
   else
   { NewWeight = GramsOnScale - SysParams[MANUALTARRA];
-    TFT_line_print(3, "gram - tarra");
+    TFT_line_print(3, GetTrans(LNG_NETWEIGHT));
   }
 
   // tarra value & current value for servo, printed on one line
   if((SysParams[MANUALTARRA] != manualtarra_old) || (current_mA != current_mA_alt))
   { manualtarra_old = SysParams[MANUALTARRA];
-    sprintf(text, "Tarra Jar %dg", SysParams[MANUALTARRA]);
+    sprintf(text, "%s %s %dg", GetTrans(LNG_TARRA), GetTrans(LNG_JAR), SysParams[MANUALTARRA]);
     if(servoactive==1)
     { if(bINA219_installed && (current_mA != current_mA_alt))
       { if(show_current == 1)
@@ -1033,7 +933,7 @@ void processHandbetrieb(void)
   // print allowable range and angle chosen for servo
   if(desired_angle != desired_angle_old)
   { desired_angle_old = desired_angle;
-    sprintf(text, "Range %d°-%d° Servo %d°", (SysParams[SERVOMIN] + offset_winkel), SysParams[SERVOMAXDOS], desired_angle);
+    sprintf(text, "Range %d°-%d° Servo %d°", (SysParams[SERVOMIN] + offset_winkel), SysParams[SERVOFASTDOS], desired_angle);
     TFT_line_print(5, text);
   }
 
@@ -1148,9 +1048,9 @@ void setup()
 
   tft_colors();
   
-  gfx->begin();
-  gfx->fillScreen(COLOR_BACKGROUND);
-  gfx->setUTF8Print(true);
+  //gfx->begin();
+  //gfx->fillScreen(COLOR_BACKGROUND);
+  //gfx->setUTF8Print(true);
     
   SetupMyDisplay(); // in hani-display.cpp
   delay(500);
@@ -1175,13 +1075,13 @@ void setup()
   // Check if we have a INA219 current sensor installed or not
   if (ina219.begin()) {
     bINA219_installed = true;
-    TFT_line_print(1, "INA219 Initialized!");
+    TFT_line_print(1, GetTrans(LNG_INA219_INIT));
     TFT_line_color(1, TFT_BLACK, TFT_GREEN);
   }
   else {
     bINA219_installed = false;
     SysParams[SERVOMAXCURRENT] = 0;                              // ignore INA wenn keiner gefunden wird
-    TFT_line_print(1, "INA219 Not Installed!");
+    TFT_line_print(1, GetTrans(LNG_INA219_MISSING));
     TFT_line_color(1, TFT_BLACK, TFT_RED);
     TFT_line_blink(1, true);
   }
@@ -1198,8 +1098,7 @@ void setup()
   pinMode(led_pin, OUTPUT);
   // short delay to let chip power up
   delay (100);
-  // Preferences aus dem EEPROM lesen
-  getPreferences();
+  
 
   // servo setup initialisation
   servo.attach(SERVO_PIN,  500, 2500); // pulse range for 180 degrees range
@@ -1243,20 +1142,18 @@ void setup()
   // Setup der Waage, Skalierungsfaktor setzen
   if (waage_vorhanden ==1) {                         // Waage angeschlossen?
     if (CalibrationFactor == 0) {                               // Vorhanden aber nicht kalibriert
-      TFT_line_print(2, "Scale Not Calibrated!");
+      TFT_line_print(2, GetTrans(LNG_SCALE_NOTCALIBRATED), true);
       TFT_line_color(2, TFT_BLACK, TFT_RED);
-      TFT_line_blink(2, true);
       buzzer(BUZZER_ERROR);
     }
     else {                                          
-      TFT_line_print(2, "Scale Initializing!");
+      TFT_line_print(2, GetTrans(LNG_SCALE_INIT));
       TFT_line_color(2, TFT_BLACK, TFT_GREEN);
     }
   }
   else {                                            // Keine Waage angeschlossen
     TFT_line_color(2, TFT_BLACK, TFT_RED);
-    TFT_line_print(2, "No Scale Connected!"); 
-    TFT_line_blink(2, true);
+    TFT_line_print(2, GetTrans(LNG_SCALE_MISSING), true); 
     buzzer(BUZZER_ERROR);
   }
   delay(1000);
@@ -1267,31 +1164,25 @@ void setup()
     gewicht = GramsOnScale;
     if ((gewicht > -20) && (gewicht < 20)) 
     { LoadCell.tare();
-      TFT_line_print(2, "Scale Auto Tarred"); 
+      TFT_line_print(2, GetTrans(LNG_SCALE_TARRED)); 
       buzzer(BUZZER_SUCCESS);
     }
     else if (CalibrationFactor != 0) {
       TFT_line_color(3, TFT_BLACK, TFT_RED);
-      TFT_line_print(3, "Please Empty Scale"); 
-      TFT_line_blink(3, true);
+      TFT_line_print(3, GetTrans(LNG_PLEASE_EMPTY_SCALE), true); 
       delay(5000);
       // Neuer Versuch, falls Gewicht entfernt wurde
       gewicht = GramsOnScale;
       if ((gewicht > -20) && (gewicht < 20)) {
         LoadCell.tare();
         buzzer(BUZZER_SUCCESS);
-        #ifdef isDebug
-          Serial.print("Tara angepasst um: ");
-          Serial.println(gewicht);
-        #endif
       }
       else {    // Warnton ausgeben
         buzzer(BUZZER_LONG);
       }
     }
   }
-  TFT_line_print(3, "Any Button To Skip"); 
-  TFT_line_blink(3, true);
+  TFT_line_print(3, GetTrans(LNG_ANY_BUTTON_TO_SKIP), true); 
   
   IsPulsed(&bStartButtonPulsed); // reset the button flag
   IsPulsed(&bStopButtonPulsed); // reset the button flag
@@ -1349,7 +1240,7 @@ void loop()
     stop_button_very_long_pressed = 0;
     { LoadCell.tare();
       TFT_line_color(2, TFT_BLACK, TFT_GREEN); 
-      TFT_line_print(2, "Scale Tarred", true); 
+      TFT_line_print(2, GetTrans(LNG_SCALE_TARRED), true); 
       delay(2000);
       TFT_line_print(2, ""); 
       OldWeight = -1; // force reprint of scale value

@@ -1,15 +1,16 @@
 #include <Arduino.h>
 
 #include <ESP32Servo.h>             
-#include <Arduino_GFX_Library.h>    
 #include <TFT_eSPI.h>               // more versatile display library
 #include <Preferences.h>            // eeprom acces library
 #include <nvs_flash.h>              /* aus dem BSP von expressif, wird verfügbar wenn das richtige Board ausgewählt ist */
 
 #include "hani.h"
 #include <HX711_ADC.h>
+#include "language.h"
+#include "menustructure.h"
 
-extern void setPreferences(void);
+
 extern int GetCurrent(int count);
 extern void buzzer(int type);
 extern void initRotaries( int rotary_mode, int rotary_value, int rotary_min, int rotary_max, int rotary_step );
@@ -21,7 +22,6 @@ extern int current_mA;                     // Strom welcher der Servo zieht
 extern int offset_winkel;              // Offset in Grad vom Schlieswinkel wen der Servo Überstrom hatte (max +3Grad vom eingestelten Winkel min)
 extern Servo servo;
 extern int inawatchdog;                // 0 = aus, 1 = ein / wird benötigt um INA messung auszusetzen
-extern Arduino_GFX *gfx;
 //Color Scheme für den TFT Display
 extern unsigned long  COLOR_BACKGROUND;
 extern unsigned long  COLOR_TEXT;
@@ -56,7 +56,6 @@ extern int fmenge;                         // ausgewählte Füllmenge
 extern int korrektur;                      // Korrekturwert für Abfüllmenge
 
 extern int progressbar;                // Variable für den Progressbar
-extern char ausgabe[];                   // Fontsize 12 = 13 Zeichen maximal in einer Zeile
 extern int modus;                     // Bei Modus-Wechsel den Servo auf Minimum fahren
 extern int auto_aktiv;                 // Für Automatikmodus - System ein/aus?
 extern int winkel;                         // aktueller Servo-Winkel
@@ -68,7 +67,6 @@ extern int show_current;               // 0 = aus, 1 = ein / Zeige den Strom an 
 extern bool bINA219_installed;   
 extern bool gezaehlt;               // Kud Zähl-Flag
 extern HX711_ADC LoadCell;
-extern int kali_gewicht; 
 
 extern Preferences preferences;
 
@@ -78,6 +76,7 @@ extern ProductParameter Products[];
 extern int SysParams[];
 extern int GramsOnScale;
 extern int ScaleStable;
+int FromLanguage = 0;
 
 
 
@@ -113,11 +112,8 @@ extern int manual_switch_f;
 
 extern TFT_eSPI tft;
 
-extern int LastMenu;
-extern int CurrentMenu;
 extern int EditMenu;
 
-extern Menu BigMenu[];
 extern int ActLcdMode;
 extern int NewWeight;
 extern int OldWeight;
@@ -133,41 +129,61 @@ void SetDefaultParameters(void);
 void SaveParameters(void);
 void LoadParameters(void);
 
+char MissedInTranslation[128];
 
+char* GetTrans(int idx)
+{ int n = 0;
+  while(Trans[n].index < LNG_LAST)
+  { if(Trans[n].index == idx)
+    { if(Trans[n].word[SysParams[LANGUAGE]][0]=='?') // Translation not defined yet, replace for hint & english
+      { sprintf(MissedInTranslation, "%s-%s", Trans[n].word[SysParams[LANGUAGE]], Trans[n].word[0]);
+        return MissedInTranslation;
+      }
+      else return Trans[n].word[SysParams[LANGUAGE]];
+    }
+    n++;
+  }
+  return Trans[n].word[SysParams[LANGUAGE]]; // last translation contains "???"
+} 
  
 void MenuHandler(void)
 { static int state = 0;
-  static int newmenu;
-  static int editmode = 0;
+  static int currentmenu;
   char text[64];
 
-  if(modus != MODE_SETUPMENU)state = 0; // new arrival
+  if(modus != MODE_SETUPMENU)
+  { FromLanguage = SysParams[LANGUAGE];
+    state = 0; // new arrival
+  }
 
   switch(state)
   { case 0:
       // Select the right menu background stuff
       SelectMenu(HANI_MENU);
       modus = MODE_SETUPMENU;
-      CurrentMenu = LastMenu;
-      TFT_line_print(0, BigMenu[CurrentMenu].menuname);
-      TFT_line_print(1, BigMenu[CurrentMenu].menuheader);
-      sprintf(text, "%02d*%02d", LastMenu, SETUP_ENDOFMENU); 
+      currentmenu = SysParams[LASTMENUSED];
+      sprintf(text, "%d - %s", currentmenu+1, GetTrans(BigMenu[currentmenu].menuidx));
+      TFT_line_print(0, text);
+      TFT_line_color(1, TFT_BLACK, TFT_ORANGE);
+      TFT_line_print(1, GetTrans(BigMenu[currentmenu].longdescriptionidx));
+      sprintf(text, "%02d*%02d", currentmenu, SETUP_ENDOFMENU); // print the dots
       TFT_line_print(5, text);
       TFT_line_color(5, TFT_WHITE, TFT_BLACK);
-      initRotaries(SW_MENU, LastMenu, SETUP_STARTOFMENU, SETUP_ENDOFMENU, 1);
+      initRotaries(SW_MENU, currentmenu, SETUP_STARTOFMENU, SETUP_ENDOFMENU, 1);
       state++;
       return;
     case 1: // wandering in top menu selection
       rotary_select = SW_MENU;
-      CurrentMenu = getRotariesValue(SW_MENU);
-      if(CurrentMenu!=LastMenu)
-      { LastMenu = CurrentMenu;
-        TFT_line_print(0, BigMenu[CurrentMenu].menuname);
-        TFT_line_print(1, BigMenu[CurrentMenu].menuheader);
-        sprintf(text, "%02d*%02d", LastMenu, SETUP_ENDOFMENU);
+      currentmenu = getRotariesValue(SW_MENU);
+      if(currentmenu!=SysParams[LASTMENUSED])
+      { SysParams[LASTMENUSED] = currentmenu;
+        sprintf(text, "%d - %s", currentmenu+1, GetTrans(BigMenu[currentmenu].menuidx));
+        TFT_line_print(0, text);   
+        TFT_line_color(1, TFT_BLACK, TFT_ORANGE);
+        TFT_line_print(1, GetTrans(BigMenu[currentmenu].longdescriptionidx));
+        sprintf(text, "%02d*%02d", currentmenu, SETUP_ENDOFMENU); // print the dots
         TFT_line_print(5, text);
       }
-
       break;
     default:
       break;
@@ -176,50 +192,13 @@ void MenuHandler(void)
   if(encoder_button_f == deb_encoder_button) // state change 
   { encoder_button_f = 1234;  
     if(deb_encoder_button)  // pressed?)
-    { editmode = true;
-      TFT_line_print(1, "");
+    { TFT_line_print(1, "");
       TFT_line_print(5, "");
       delay(100); // give some time to background task for display update
-
-      // use the old menus
-      switch(LastMenu)
-      { case 0:   
-          ParameterMenu(0);
-          break;
-        case 1:   
-          CalibrateScale();         // new menu
-          break;
-        case 2:   
-          ParameterMenu(2);
-          break;  
-        case 3:   
-          ParameterMenu(3);
-          break;  
-        case 4:   
-          ParameterMenu(4);
-          break;  
-        case 5:   
-          ParameterMenu(5);
-          break;  
-        case 6:   
-          ParameterMenu(6);
-          break;  
-        case 7:   
-          ParameterMenu(7);
-          break;  
-        case 8:   
-          ParameterMenu(9);
-          break;  
-        case 9:   
-          ParameterMenu(10);  // languages
-          break;  
-        default:   
-           break;  
-       }
-       editmode = false;
-       ActLcdMode = 999; // force new display build
-       CurrentMenu = 999; 
-       modus = -1;
+      if(currentmenu == SETUP_CALIBRATE)CalibrateScale(); 
+      else ParameterMenu(currentmenu);  
+      ActLcdMode = 999; // force new display build
+      modus = -1;
     } 
   }     
 }
@@ -228,8 +207,8 @@ void MenuHandler(void)
 void CalibrateScale(void)
  { float gewicht_raw;
    int state = 0;
-   int gewicht_alt = -9999;
-   int kali_gewicht_old = -9999;
+   int calibrationweight;
+   int oldcalibrationweight = -1;
    unsigned long now;
    char text[64];
 
@@ -254,34 +233,38 @@ void CalibrateScale(void)
        }
        state = 8; // Quick exit
      }
+
      switch(state)
      { case 0:
-         TFT_line_color(4, TFT_BLACK, TFT_RED);
-         TFT_line_print(4, "Empty Scale Please!", true);
-         TFT_line_print(5, "Continue When Done");
+         TFT_line_color(3, TFT_BLACK, TFT_RED);
+         TFT_line_print(3, GetTrans(LNG_PLEASE_EMPTY_SCALE), true);
+         TFT_line_print(5, GetTrans(LNG_CONTINUE_WHEN_DONE));
          state++; 
          break;
        case 1: // wait for button
-         if(IsPulsed(&bEncoderButtonPulsed))  // encoder pressed?)
+         if(IsPulsed(&bEncoderButtonPulsed))  // encoder pressed?)now
          { LoadCell.setCalFactor(1);
-           LoadCell.tare(); // returns after actual tarring
+           TFT_line_print(3, GetTrans(LNG_SCALE_TARRED), true);
            state++;
          }
          break;
        case 2: 
+         LoadCell.tare(); // returns after actual tarring
          state++;
          break;  
        case 3: 
-         TFT_line_color(3, TFT_BLACK, TFT_RED);
-         TFT_line_print(3, "Place A Known Weight", true);
-         TFT_line_print(5, "Continue When Done");
-         initRotaries(SW_MENU, kali_gewicht, 100, 9999, 1); 
+         TFT_line_print(3, GetTrans(LNG_PLACE_KNOWN_WEIGHT), true);
+         TFT_line_print(5, GetTrans(LNG_CONTINUE_WHEN_DONE));
+         initRotaries(SW_MENU, SysParams[CALWEIGHT], 100, 9999, 1); 
          state++;
+         break;
        case 4: // let user adjust the known weight
-         kali_gewicht = getRotariesValue(SW_MENU);
-         if (kali_gewicht != kali_gewicht_old)
-         {  sprintf(ausgabe, "Calibrate As %d gram", kali_gewicht);
-            TFT_line_print(4, ausgabe);
+         calibrationweight = getRotariesValue(SW_MENU);
+         if (calibrationweight != oldcalibrationweight)
+         { oldcalibrationweight = calibrationweight;
+           SysParams[CALWEIGHT] = calibrationweight;
+           sprintf(text, "%s %d %s", GetTrans(LNG_CALIBRATE_AS), calibrationweight, GetTrans(LNG_GRAM));
+           TFT_line_print(4, text);
          }
          if(IsPulsed(&bEncoderButtonPulsed))
          { state++; 
@@ -289,18 +272,13 @@ void CalibrateScale(void)
          break;  
        case 5:
          gewicht_raw = GramsOnScale;
-         CalibrationFactor = gewicht_raw / kali_gewicht;
+         CalibrationFactor = gewicht_raw / calibrationweight;
          LoadCell.setCalFactor(CalibrationFactor); 
          rawtareoffset = LoadCell.getTareOffset(); // should be zero after fresh calibration
-         //sprintf(text,"Empty Raw Weight = %d", rawtareoffset);
-         //TFT_line_print(3, text);
-         //sprintf(text,"Calibration Factor = %f", CalibrationFactor);
-         //TFT_line_print(4, text);
-         TFT_line_print(5, "Thank You!", true);
-         setPreferences();
+         TFT_line_print(5, GetTrans(LNG_THANKS), true);
          SaveParameters();
          delay(1000);
-         EditMenu = CurrentMenu;  // bepaalt of gewicht geprint wordt
+         EditMenu = SETUP_CALIBRATE;  // bepaalt of gewicht geprint wordt
          state++;
          break;
 
@@ -317,10 +295,8 @@ void CalibrateScale(void)
          return;
          break;  
      }
-     delay(10); 
-   
+     delay(100); 
    } 
-
 }
 
 
@@ -340,6 +316,8 @@ void ParameterMenu(int menu)
    int newvalue;
    int column; 
 
+   EditMenu = menu;
+
    IsPulsed(&bStartButtonPulsed); // reset the button flag
    IsPulsed(&bStopButtonPulsed); // reset the button flag
    IsPulsed(&bEncoderButtonPulsed); // reset the button flag
@@ -353,7 +331,7 @@ void ParameterMenu(int menu)
    { if(BigMenu[menu].line[n].targetidx != NOT_USED)menuitems++;
    }
    column = 1; // work on the first column
-
+   
    while(true)
    { if(IsPulsed(&bStopButtonPulsed) || !deb_setup_switch)
      { if(state==4) // stop button and setup switch works as cancel while fiddling with the value
@@ -393,7 +371,7 @@ void ParameterMenu(int menu)
              }
            }  
          }
-         TFT_line_print(5, BigMenu[menu].bottomline, editline==menuitems);
+         TFT_line_print(5, GetTrans(LNG_EXIT), editline==menuitems);
          if(editline==menuitems)
          { TFT_line_color(5, TFT_WHITE, TFT_BLACK);
          }
@@ -450,9 +428,10 @@ void ParameterMenu(int menu)
                {  restorevalue = Products[editline].Count;
                   initRotaries(SW_MENU, 0, BigMenu[menu].line[editline].min, BigMenu[menu].line[editline].max, 1);
                }
-               else if(BigMenu[menu].line[editline].parmtype==SET_TRIPCOUNT)
-               {  restorevalue = Products[editline].TripCount;
-                  initRotaries(SW_MENU, Products[editline].TripCount, BigMenu[menu].line[editline].min, BigMenu[menu].line[editline].max, 1);
+               else if(BigMenu[menu].line[editline].parmtype==SET_LANGUAGE)
+               { FromLanguage = SysParams[LANGUAGE];
+                 restorevalue = SysParams[BigMenu[menu].line[editline].targetidx];
+                 initRotaries(SW_MENU, SysParams[BigMenu[menu].line[editline].targetidx], BigMenu[menu].line[editline].min, BigMenu[menu].line[editline].max, 1);
                }
                else
                { restorevalue = SysParams[BigMenu[menu].line[editline].targetidx];
@@ -512,23 +491,18 @@ void ParameterMenu(int menu)
                TFT_line_print(editline-scrollpos+1, text, true);
              }
            }
-           else if (BigMenu[menu].line[editline].parmtype==SET_TRIPCOUNT)
-           { if(newvalue!=Products[editline].TripCount)
-              {Products[editline].TripCount = newvalue;
-               GetTextForMenuLine(text, menu, editline);
-               TFT_line_print(editline-scrollpos+1, text, true);
-             }
-           }
-           
            else if(newvalue!=SysParams[BigMenu[menu].line[editline].targetidx])
            { SysParams[BigMenu[menu].line[editline].targetidx] = newvalue;
              GetTextForMenuLine(text, menu, editline);
              TFT_line_print(editline-scrollpos+1, text, true);
            }
 
-           if(IsPulsed(&bEncoderButtonPulsed))  // pressed?
+           if(IsPulsed(&bEncoderButtonPulsed))  // pressed to set/save?
            { if(column==BigMenu[menu].columns) // time to leave
              { TFT_line_blink(editline-scrollpos+1, false);
+               if(BigMenu[menu].line[editline].parmtype==SET_LANGUAGE) 
+               { FromLanguage = SysParams[LANGUAGE];
+               }  
                if(BigMenu[menu].line[editline].parmtype == RESETPREFS)
                { preferences.begin("EEPROM", false);
                  preferences.clear();
@@ -548,12 +522,17 @@ void ParameterMenu(int menu)
                if(BigMenu[menu].line[editline].parmtype == SET_TARRA)TFT_line_color(editline-scrollpos+1, TFT_WHITE, TFT_BLACK); // back to normal
                initRotaries(SW_MENU, editline, 0, menuitems, 1);
                column=1;  
-               state=1; 
+               if(BigMenu[menu].line[editline].parmtype==SET_LANGUAGE)
+               { sprintf(text, "%d - %s", menu+1, GetTrans(BigMenu[menu].menuidx));
+                 TFT_line_print(0, text);
+                 state=0; 
+               }
+               else state =1;
                BigMenu[menu].line[editline].selected = false; // not selected as target under edit anymore
-               TFT_line_print(5, "Saved!", true);
+               TFT_line_print(5, GetTrans(LNG_SAVED), true);
                SaveParameters();
                delay(1000);
-               TFT_line_print(5, BigMenu[menu].bottomline);
+               TFT_line_print(5, GetTrans(LNG_EXIT));
              }
              else
              { column++; 
@@ -570,7 +549,7 @@ void ParameterMenu(int menu)
          state++; 
          break;  
        case 6:
-         TFT_line_print(5, "Thank You!", true);
+         TFT_line_print(5, GetTrans(LNG_THANKS), true);
          SaveParameters();
          state++;
          break;
@@ -604,27 +583,31 @@ void GetTextForMenuLine(char* text, int menu, int line)
       sprintf(text, "%dg - %s", Products[line].Gewicht, JarTypes[Products[line].GlasTyp].name);
       break;
     case SET_ON_OFF:
-      sprintf(text, "%s %s", BigMenu[menu].line[line].name, (SysParams[BigMenu[menu].line[line].targetidx]==0) ? "Off" : "On");
+      if(SysParams[BigMenu[menu].line[line].targetidx])sprintf(text, "%s %s", GetTrans(BigMenu[menu].line[line].labelidx), GetTrans(LNG_ON));
+      else sprintf(text, "%s %s", GetTrans(BigMenu[menu].line[line].labelidx), GetTrans(LNG_OFF));
       break;
     case SET_YES_NO:
-      sprintf(text, "%s %s", BigMenu[menu].line[line].name, (SysParams[BigMenu[menu].line[line].targetidx]==0) ? "No" : "Yes");
+      sprintf(text, "%s %s", GetTrans(BigMenu[menu].line[line].labelidx), (SysParams[BigMenu[menu].line[line].targetidx]==0) ? "No" : "Yes");
       break;
     case SET_GRAMS:
-      sprintf(text, "%s %dg", BigMenu[menu].line[line].name, targetvalue);
+      sprintf(text, "%s %dg", GetTrans(BigMenu[menu].line[line].labelidx), targetvalue);
       break;
     case SET_INTEGER:
-      sprintf(text, "%s %d", BigMenu[menu].line[line].name, targetvalue);
+      sprintf(text, "%s %d", GetTrans(BigMenu[menu].line[line].labelidx), targetvalue);
       break;
     case SET_DEGREES:
-      sprintf(text, "%s %d°", BigMenu[menu].line[line].name, targetvalue);
+      sprintf(text, "%s %d°", GetTrans(BigMenu[menu].line[line].labelidx), targetvalue);
       break;
     case SET_MILLIAMPSMAX:
-      sprintf(text, "%s %dmA", BigMenu[menu].line[line].name, targetvalue);
+      sprintf(text, "%s %dmA", GetTrans(BigMenu[menu].line[line].labelidx), targetvalue);
       break;
     case SET_LANGUAGE:
+      sprintf(text, "%s - %s", Trans[LNG_LANGUAGE].word[FromLanguage], Trans[LNG_ENGLISH+targetvalue].word[FromLanguage]);
+      break;
+
     case RESETPREFS:
     case RESETEEPROM:
-      sprintf(text, "%s", BigMenu[menu].line[line].name);
+      sprintf(text, "%s", GetTrans(BigMenu[menu].line[line].labelidx));
       break;
     case SET_TARRA:
       sprintf(text, "%s %dg", JarTypes[line].name, JarTypes[line].tarra);
@@ -632,27 +615,24 @@ void GetTextForMenuLine(char* text, int menu, int line)
     case SET_TO_ZERO:
       sprintf(text, "%dg %s %d", Products[line].Gewicht, JarTypes[Products[line].GlasTyp].name, Products[line].Count);
       break;
-    case SET_TRIPCOUNT:
-      sprintf(text, "%d-%s %d", Products[line].Gewicht, JarTypes[Products[line].GlasTyp].name, Products[line].TripCount);
-      break; 
     case SET_GRAM_TOLERANCE:
-      sprintf(text, "%s ±%dg", BigMenu[menu].line[line].name, targetvalue);
+      sprintf(text, "%s ±%dg", GetTrans(BigMenu[menu].line[line].labelidx), targetvalue);
       break;
     case SET_CHOSEN:
       if(BigMenu[menu].line[line].selected)
       { sprintf(text, "%dg+%dg %s", Products[targetvalue].Gewicht, SysParams[COULANCE], JarTypes[Products[targetvalue].GlasTyp].name);
       }
       else
-      { sprintf(text, "Default Product %dg+%dg %s", Products[targetvalue].Gewicht, SysParams[COULANCE], JarTypes[Products[targetvalue].GlasTyp].name);
+      { sprintf(text, "%s %dg+%dg %s", GetTrans(LNG_DEFAULT_PRODUCT), Products[targetvalue].Gewicht, SysParams[COULANCE], JarTypes[Products[targetvalue].GlasTyp].name);
       }
       break;
     case SET_PERCENT:
-      sprintf(text, "%s %d%%", BigMenu[menu].line[line].name, targetvalue);
+      sprintf(text, "%s %d%%", GetTrans(BigMenu[menu].line[line].labelidx), targetvalue);
       break;
 
 
     default:
-      sprintf(text, "%s", BigMenu[menu].line[line].name);
+      sprintf(text, "%s", GetTrans(BigMenu[menu].line[line].labelidx));
       break;
   }
 }
@@ -671,6 +651,8 @@ void SetDefaultParameters(void)
   SysParams[AUTO_JAR_TOLERANCE] = 20; // 20 gram tolerance on empty jar
   SysParams[AUTO_CORRECTION] = 1;
   SysParams[CHOSENPRODUCT] = 0;
+  SysParams[LASTMENUSED] = 0;
+  SysParams[CALWEIGHT] = 500; // assumme this as calibration standard 
   
 //  CalibrationFactor = 0; // assume not calibrated
 }
@@ -706,17 +688,13 @@ void SaveParameters(void)
     if(Products[n].GlasTyp != preferences.getUInt(label, -12345))
     { preferences.putUInt(label, Products[n].GlasTyp);
     }
-    sprintf(label, "jar%d-tara", n);
-    if(JarTypes[n].tarra != preferences.getUInt(label, -12345))
-    { preferences.putUInt(label, JarTypes[n].tarra);
-    }
-    sprintf(label, "jar%d-tripcount", n);
-    if(Products[n].TripCount != preferences.getUInt(label, -12345))
-    { preferences.putUInt(label, Products[n].TripCount);
-    }
     sprintf(label, "jar%d-count", n);
     if(Products[n].Count != preferences.getUInt(label, -12345))
     { preferences.putUInt(label, Products[n].Count);
+    }
+    sprintf(label, "jar%d-tara", n);
+    if(JarTypes[n].tarra != preferences.getUInt(label, -12345))
+    { preferences.putUInt(label, JarTypes[n].tarra);
     }
   }
   preferences.end();
@@ -762,25 +740,17 @@ void LoadParameters(void)
     Serial.print(" = ");
     Serial.println(val);
 
-    sprintf(label, "jar%d-tara", n);
-    val = preferences.getUInt(label, -12345);
-    if(val != -12345)JarTypes[n].tarra = val;
-    Serial.print("Parameter loaded - ");
-    Serial.print(label);
-    Serial.print(" = ");
-    Serial.println(val);
-
-    sprintf(label, "jar%d-tripcount", n);
-    val = preferences.getUInt(label, -12345);
-    if(val != -12345)Products[n].TripCount = val;
-    Serial.print("Parameter loaded - ");
-    Serial.print(label);
-    Serial.print(" = ");
-    Serial.println(val);
-
     sprintf(label, "jar%d-count", n);
     val = preferences.getUInt(label, -12345);
     if(val != -12345)Products[n].Count = val;
+    Serial.print("Parameter loaded - ");
+    Serial.print(label);
+    Serial.print(" = ");
+    Serial.println(val);
+
+    sprintf(label, "jar%d-tara", n);
+    val = preferences.getUInt(label, -12345);
+    if(val != -12345)JarTypes[n].tarra = val;
     Serial.print("Parameter loaded - ");
     Serial.print(label);
     Serial.print(" = ");

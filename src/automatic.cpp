@@ -1,16 +1,14 @@
 #include <Arduino.h>
-
-#include <ESP32Servo.h>             /* aus dem Bibliotheksverwalter */
-#include <Arduino_GFX_Library.h>    /* aus dem Bibliotheksverwalter */
-#include <TFT_eSPI.h>               // more versatile display library
-
-// Fonts
-#include "./Fonts/Punk_Mono_Thin_160_100.h"           //13 x 9
-
+#include <ESP32Servo.h>             
+#include <TFT_eSPI.h>               
 #include "hani.h"
-#include <HX711_ADC.h>
 
-extern void setPreferences(void);
+#define TRANS
+#include "language.h"
+#include "menustructure.h"
+extern char* GetTrans(int idx);
+
+
 extern int GetCurrent(int count);
 extern void buzzer(int type);
 extern void initRotaries( int rotary_mode, int rotary_value, int rotary_min, int rotary_max, int rotary_step );
@@ -24,7 +22,6 @@ extern int current_mA;                     // Strom welcher der Servo zieht
 extern int offset_winkel;              // Offset in Grad vom Schlieswinkel wen der Servo Überstrom hatte (max +3Grad vom eingestelten Winkel min)
 extern Servo servo;
 extern int inawatchdog;                // 0 = aus, 1 = ein / wird benötigt um INA messung auszusetzen
-extern Arduino_GFX *gfx;
 //Color Scheme für den TFT Display
 extern unsigned long  COLOR_BACKGROUND;
 extern unsigned long  COLOR_TEXT;
@@ -59,7 +56,6 @@ extern int rotary_select;
 extern int show_current;               // 0 = aus, 1 = ein / Zeige den Strom an auch wenn der INA ignoriert wird
 extern bool bINA219_installed;   
 extern bool gezaehlt;               // Kud Zähl-Flag
-extern HX711_ADC LoadCell;
 
 extern JarType JarTypes[];
 extern ProductParameter Products[];
@@ -127,21 +123,29 @@ void processAutomatik2(void)
   static int expected_tarra;
   static int actual_tarra = 0; // weight of the placed jar
   static int actual_angle;
-  static int full_dosage_angle = -1;   // angle used for dosing max 
-  static int old_full_dosage_angle = -1; 
-  static int fine_dosage_angle = -1;    
-  static int old_fine_dosage_angle = -1; 
-  static int full_dosage_percent = 100;    // continiously changeable by rotary
-  static int old_full_dosage_percent = -1; // continiously changeable by rotary
-  static int fine_dosage_percent = 100;    // continiously changeable by rotary
-  static int old_fine_dosage_percent = -1; // continiously changeable by rotary
+  
+  static int fast_dosage_angle = -1;   // angle used for dosing max 
+  static int old_fast_dosage_angle = -1; 
+  
+  static int slow_dosage_angle = -1;    
+  static int old_slow_dosage_angle = -1; 
+  
+  static int fast_dosage_percent = 100;    // continiously changeable by rotary
+  static int old_fast_dosage_percent = -1; // continiously changeable by rotary
+  static int slow_dosage_percent = 100;    // continiously changeable by rotary
+  static int old_slow_dosage_percent = -1; // continiously changeable by rotary
+  
   static int percent_angle = -1; // from encoder
-  static int old_angle = -1; // from encoder
+    static int old_angle = -1; // from encoder
+  
   static int product_chosen = -1;
   static int old_product_chosen = -1;
-  static int net_weight = 0;
-  static int target_weight = 0; // net weight + actual tarra for glas + correction - correction is aimed to achieve the coulance for this product???????
-  float  grams_to_go; 
+  static int target_net_weight = 0;
+  static int target_bruto_weight = 0; // net weight + actual tarra for glas + correction - correction is aimed to achieve the coulance for this product???????
+  static float grams_to_go = 0; 
+  static int net_weight_in_jar = 0;
+  static float slow_down_at_net_weight = 0;
+
   int i=0;
   int textdatum;
 
@@ -155,25 +159,34 @@ void processAutomatik2(void)
   if(state>0)
   { product_chosen = getRotariesValue(SW_MENU);
     if(product_chosen != old_product_chosen)
-    { net_weight     = Products[product_chosen].Gewicht;
+    { target_net_weight     = Products[product_chosen].Gewicht;
       expected_tarra = JarTypes[Products[product_chosen].GlasTyp].tarra;
       actual_tarra = expected_tarra; // when empty jar is placed, this will be updated to actual weight of jar with its apperent tolerance
-      sprintf(text, "%dg+%dg %s", net_weight, SysParams[COULANCE], JarTypes[Products[product_chosen].GlasTyp].name);
-      TFT_line_print(4,text, rotary_select==SW_MENU); // blink when in setup for this item
       old_product_chosen = product_chosen;
       SysParams[CHOSENPRODUCT] = product_chosen;
+      slow_down_at_net_weight = (float)((SysParams[SLOWDOWNPERCENT] * target_net_weight)/100);
     }  
     
     SysParams[CORRECTION] = getRotariesValue(SW_KORREKTUR);
     percent_angle = getRotariesValue(SW_WINKEL); // value 0-100 
 
-    if(dosing_state == DOSING_FINE) 
-    { fine_dosage_percent = percent_angle;
-      fine_dosage_angle = (((SysParams[SERVOFINEDOS]-SysParams[SERVOMIN]) * percent_angle) / 100)+SysParams[SERVOMIN]; // get angle of MIN-FINE range
+    if(dosing_state == DOSING_SLOW) 
+    { slow_dosage_angle = percent_angle;
+      slow_dosage_angle = (((SysParams[SERVOSLOWDOS]-SysParams[SERVOMIN]) * percent_angle) / 100)+SysParams[SERVOMIN]; // get angle of MIN-FINE range
     }
     else
-    { full_dosage_percent = percent_angle;
-      full_dosage_angle = (((SysParams[SERVOMAXDOS]-SysParams[SERVOFINEDOS]) * percent_angle) / 100)+SysParams[SERVOFINEDOS]; // get angle of FINE-MAX range
+    { fast_dosage_percent = percent_angle;
+      fast_dosage_angle = (((SysParams[SERVOFASTDOS]-SysParams[SERVOSLOWDOS]) * percent_angle) / 100)+SysParams[SERVOSLOWDOS]; // get angle of FINE-MAX range
+    }
+
+    // refresh the servo data on screen
+    if((offset_winkel != winkel_min_alt) || (fast_dosage_angle != old_fast_dosage_angle) || (slow_dosage_angle != old_slow_dosage_angle) || (actual_angle != winkel_ist_alt))
+    { sprintf(TheAngles.content, "  Servo %d-%d\xB0 F %d\xB0 S %d\xB0 A %d\xB0  ", SysParams[SERVOMIN] + offset_winkel, SysParams[SERVOFASTDOS], fast_dosage_angle, slow_dosage_angle, actual_angle );
+      TheAngles.refresh = true;
+      winkel_min_alt = offset_winkel;
+      old_fast_dosage_angle = fast_dosage_angle;
+      old_slow_dosage_angle = slow_dosage_angle;
+      winkel_ist_alt = actual_angle;
     }
   }
   
@@ -184,14 +197,15 @@ void processAutomatik2(void)
       modus = MODE_AUTOMATIK;
 
       actual_angle = SysParams[SERVOMIN];          // Hahn schliessen
-      full_dosage_angle = SysParams[SERVOMAXDOS];
-      fine_dosage_angle = SysParams[SERVOFINEDOS];
+      fast_dosage_angle = SysParams[SERVOFASTDOS];
+      slow_dosage_angle = SysParams[SERVOSLOWDOS];
 
       //sprintf(text,"product_chosen=%d",product_chosen);
       //TFT_line_print(2, text);
       product_chosen = SysParams[CHOSENPRODUCT];
       if(product_chosen < 0)product_chosen = SysParams[CHOSENPRODUCT];
       else initRotaries(SW_MENU, product_chosen, 0, 5, 1);
+      setRotariesValue(SW_KORREKTUR, SysParams[CORRECTION]);
 
       //rotary_select = SW_WINKEL;    // Einstellung für Winkel über Rotary
       
@@ -234,17 +248,16 @@ void processAutomatik2(void)
       return;
       break;
     
-    case 2: 
-      // print fixed graphic elements on display  
-//      gfx->setTextColor(COLOR_TEXT);
-//      gfx->setFont(Punk_Mono_Thin_160_100);
-//      gfx->setCursor(170, 236);
-//      gfx->print("Autokorr.:");
+    case 2: // placeholder for perhaps something to do
       state++;
       return;
       break;
     
-    case 3: // placeholder for perhaps something to do
+    case 3: 
+      if(SysParams[AUTOSTART])TFT_line_print(0, GetTrans(LNG_FULL_AUTO_STOPPED));
+      else
+      { TFT_line_print(0, GetTrans(LNG_SEMI_AUTO_STOPPED));
+      }    
       state++;
       return;
       break;
@@ -252,11 +265,11 @@ void processAutomatik2(void)
     case 4: 
       // need a tarra value for empty jar
       if(expected_tarra < 25)
-      { sprintf(text, "Bad Tarra Value %dg!", expected_tarra);
-        TFT_line_print(2, text, true);
-        TFT_line_color(2, TFT_BLACK, TFT_RED);
-        sprintf(text, "Please Set Valid Tarra For %s", JarTypes[Products[product_chosen].GlasTyp].name);
-        TFT_line_print(3, text);
+      { sprintf(text, "%s %dg!", GetTrans(LNG_BAD_TARRA_VALUE), expected_tarra);
+        TFT_line_print(4, text, true);
+        TFT_line_color(4, TFT_BLACK, TFT_RED);
+        sprintf(text, "%s %s", GetTrans(LNG_PLEASE_SET_TARRA_VALUE), JarTypes[Products[product_chosen].GlasTyp].name);
+        TFT_line_print(5, text);
         state++;
         return;
       }
@@ -268,6 +281,8 @@ void processAutomatik2(void)
       break;  
 
     case 6: // good to go or to continue
+      sprintf(text, "%dg+%dg %s", target_net_weight, SysParams[COULANCE], JarTypes[Products[product_chosen].GlasTyp].name);
+      TFT_line_print(4,text, rotary_select==SW_MENU); // blink when in setup for this item
       IsPulsed(&bStartButtonPulsed); // reset the button flag
       IsPulsed(&bStopButtonPulsed); // reset the button flag
       IsPulsed(&bEncoderButtonPulsed); // reset the button flag
@@ -284,22 +299,7 @@ void processAutomatik2(void)
   // keep the servo up to date
   SERVO_WRITE(actual_angle);
 
-  // refresh the servo data on screen
-  if((offset_winkel != winkel_min_alt) || (full_dosage_angle != old_full_dosage_angle) || (fine_dosage_angle != old_fine_dosage_angle) || (actual_angle != winkel_ist_alt))
-  { // gfx->setTextColor(COLOR_TEXT);
-//    gfx->fillRect(2, Y_SERVODATA+3, 318, 16, COLOR_BACKGROUND);
-//    gfx->setFont(Punk_Mono_Thin_160_100);
-//    gfx->setCursor(2, Y_SERVODATA+17);
-    // added leading and trailing spaces, as the width may vary and don't want a cluttered background
-    sprintf(TheAngles.content, " Servo %d-%d° M %d° F %d° A %d° ", SysParams[SERVOMIN] + offset_winkel, SysParams[SERVOMAXDOS], full_dosage_angle, fine_dosage_angle, actual_angle );
-    TheAngles.refresh = true;
-//    gfx->print(text);
-    winkel_min_alt = offset_winkel;
-    old_full_dosage_angle = full_dosage_angle;
-    old_fine_dosage_angle = fine_dosage_angle;
-    winkel_ist_alt = actual_angle;
-  }
-  
+ 
   // if state hangs in no tarra for jar
   if(state<6)return;
 
@@ -318,25 +318,25 @@ void processAutomatik2(void)
     if(runmode==0)
     { TheAngles.backgroundcolor = TFT_BLACK;
       TheAngles.textcolor = TFT_WHITE;
-      if(SysParams[AUTOSTART])TFT_line_print(0, "FULL-AUT0 STOPPED");
+      if(SysParams[AUTOSTART])TFT_line_print(0, GetTrans(LNG_FULL_AUTO_STOPPED));
       else
-      { TFT_line_print(0, "SEMI-AUT0 STOPPED");
+      { TFT_line_print(0, GetTrans(LNG_SEMI_AUTO_STOPPED));
       }
     }  
     else if(runmode==1)
     { TheAngles.backgroundcolor = TFT_ORANGE;
-      if(SysParams[AUTOSTART])TFT_line_print(0, "FULL-AUT0 PAUSED");
+      if(SysParams[AUTOSTART])TFT_line_print(0, GetTrans(LNG_FULL_AUTO_PAUSED));
       else
-      { TFT_line_print(0, "SEMI-AUT0 PAUSED");
+      { TFT_line_print(0, GetTrans(LNG_SEMI_AUTO_PAUSED));
       }
     }  
     else 
     { TheAngles.backgroundcolor = TFT_GREEN;
       TheAngles.textcolor = TFT_BLACK;
     
-      if(SysParams[AUTOSTART])TFT_line_print(0, "FULL-AUT0 FILLING");
+      if(SysParams[AUTOSTART])TFT_line_print(0, GetTrans(LNG_FULL_AUTO_FILLING));
       else 
-      { TFT_line_print(0, "SEMI-AUT0 FILLING");
+      { TFT_line_print(0, GetTrans(LNG_SEMI_AUTO_FILLING));
       }
     } 
     TheAngles.refresh = true; 
@@ -347,45 +347,45 @@ void processAutomatik2(void)
   { old_scale_status = scale_status;
     switch(scale_status)
     { case SCALE_EMPTY:
-        TFT_line_color(5, TFT_WHITE, TFT_DARKGREY);
-        sprintf(text, "Place Empty Jar %d", Products[product_chosen].Count+1);
+        TFT_line_color(5, TFT_BLACK, TFT_ORANGE);
+        sprintf(text, GetTrans(LNG_PLACE_EMPTY_JAR), Products[product_chosen].Count+1);
         TFT_line_print(5, text, true);
         break;
       case SCALE_JAR_PLACED:
-        TFT_line_color(5, TFT_BLACK, TFT_GREEN);
-        sprintf(text, "Jar %d Is Placed", Products[product_chosen].Count+1);
+        TFT_line_color(5, TFT_BLACK, TFT_ORANGE);
+        sprintf(text, GetTrans(LNG_JAR_IS_PLACED), Products[product_chosen].Count+1);
         TFT_line_print(5, text);
         break;
       case SCALE_WAIT_START:
-        TFT_line_color(5, TFT_WHITE, TFT_DARKGREY);
-        TFT_line_print(5, "Press Start To Fill", true);
+        TFT_line_color(5, TFT_BLACK, TFT_GREEN);
+        TFT_line_print(5, GetTrans(LNG_PRESS_START_TO_FILL), true);
         break;
       case SCALE_WAIT_RESUME:
-        TFT_line_color(5, TFT_WHITE, TFT_DARKGREY);
-        TFT_line_print(5, "Press Start To Resume", true);
+        TFT_line_color(5, TFT_BLACK, TFT_GREEN);
+        TFT_line_print(5, GetTrans(LNG_PRESS_START_TO_RESUME), true);
         break;
       case SCALE_WILL_START:
-        TFT_line_color(5, TFT_WHITE, TFT_DARKGREY);
-        TFT_line_print(5, "Will Start Filling");
+        TFT_line_color(5, TFT_BLACK, TFT_ORANGE);
+        TFT_line_print(5, GetTrans(LNG_WILL_START_FILLING));
         break;
       case SCALE_WILL_RESUME:
-        TFT_line_color(5, TFT_WHITE, TFT_DARKGREY);
-        TFT_line_print(5, "Will Resume Filling");
+        TFT_line_color(5, TFT_BLACK, TFT_ORANGE);
+        TFT_line_print(5, GetTrans(LNG_WILL_RESUME_FILLING));
         break;
-      case SCALE_JAR_FILL_FULL_SPEED:
-        TFT_line_color(5, TFT_WHITE, TFT_DARKGREY);
-        TFT_line_print(5, "Full Speed Fill");
+      case SCALE_JAR_FILL_FAST_SPEED:
+        TFT_line_color(5, TFT_BLACK, TFT_ORANGE);
+        TFT_line_print(5, GetTrans(LNG_FAST_FILLING), true);
         break;
       case SCALE_JAR_FILL_SLOW_SPEED:
-        TFT_line_color(5, TFT_WHITE, TFT_DARKGREY);
-        TFT_line_print(5, "Fine Speed Fill");
+        TFT_line_color(5, TFT_BLACK, TFT_ORANGE);
+        TFT_line_print(5, GetTrans(LNG_SLOW_FILLING), true);
         break;
       case SCALE_JAR_FILLING_PAUSED:
-        TFT_line_color(5, TFT_WHITE, TFT_DARKGREY);
-        TFT_line_print(5, "Paused Fill");
+        TFT_line_color(5, TFT_RED, TFT_DARKGREY);
+        TFT_line_print(5, GetTrans(LNG_PAUSED_FILL));
         break;
       case SCALE_JAR_FILLED:
-        sprintf(text, "Jar %d Is Ready!", Products[product_chosen].Count);
+        sprintf(text, GetTrans(LNG_JAR_IS_READY), Products[product_chosen].Count);
         TFT_line_print(5, text);
         TFT_line_color(5, TFT_BLACK, TFT_GREEN);
         break;
@@ -396,10 +396,25 @@ void processAutomatik2(void)
   if(bScaleStable)
   { if(GramsOnScale<10)weight_status = WEIGHT_EMPTY_SCALE;
     else if(abs(GramsOnScale - actual_tarra) <= SysParams[AUTO_JAR_TOLERANCE])weight_status = WEIGHT_EMPTY_JAR;
-    else if((GramsOnScale) > actual_tarra + net_weight)weight_status = WEIGHT_FULL_JAR; 
+    else if((GramsOnScale) >= actual_tarra + target_net_weight)weight_status = WEIGHT_FULL_JAR; 
     else weight_status = WEIGHT_PARTIAL_JAR;
-  
+    if(dosing_state == DOSING_FINISHED) 
+    { if((GramsOnScale) > actual_tarra + target_net_weight + SysParams[COULANCE]) // really too much
+      { SysParams[CORRECTION]--;
+      }
+      else if((GramsOnScale) < actual_tarra + target_net_weight) // really too little
+      { SysParams[CORRECTION]++;
+      }
+      setRotariesValue(SW_KORREKTUR, SysParams[CORRECTION]); // adjust the virtual knob
+      dosing_state = DOSING_NEEDS_EXPECTED_TARRA; // for the new empty jar
+    }
   }
+
+  if(dosing_state == DOSING_NEEDS_EXPECTED_TARRA)
+  { dosing_state = DOSING_STOPPED;
+    actual_tarra = expected_tarra; // reset the tarra to value as given in setup
+  }
+
 
   if(scale_status <= SCALE_JAR_PLACED)
   { NewWeight = GramsOnScale; 
@@ -446,53 +461,53 @@ void processAutomatik2(void)
   }
 
   if(((scale_status == SCALE_WILL_START) || (scale_status == SCALE_WAIT_START) || (scale_status == SCALE_WAIT_RESUME)) && !Unstable10mS && (runmode==2))
-  { scale_status = SCALE_JAR_FILL_FULL_SPEED;
-    dosing_state = DOSING_FULL;
+  { scale_status = SCALE_JAR_FILL_FAST_SPEED;
+    dosing_state = DOSING_FAST;
   }
 
 
   if(dosing_state != old_dosing_state) // set the encoder to make eventual adjustments to servo according full or fine dosing state
   { old_dosing_state = dosing_state;
-    if(dosing_state == DOSING_FULL) 
-    { initRotaries(SW_WINKEL, full_dosage_percent, 0, 100, 5); 
+    if(dosing_state == DOSING_FAST) 
+    { initRotaries(SW_WINKEL, fast_dosage_percent, 0, 100, 1); 
     }
-    else if(dosing_state == DOSING_FINE) 
-    { initRotaries(SW_WINKEL, fine_dosage_percent, 0, 100, 5); 
+    else if(dosing_state == DOSING_SLOW) 
+    { initRotaries(SW_WINKEL, slow_dosage_angle, 0, 100, 1); 
     }
     else
-    { initRotaries(SW_WINKEL, full_dosage_percent, 0, 100, 5); 
+    { initRotaries(SW_WINKEL, fast_dosage_percent, 0, 100, 1); 
     }
   }
 
   // this is the part where we actively adjust the servo as we fill the jar
-  target_weight = net_weight + actual_tarra + SysParams[CORRECTION] + autokorrektur_gr;
+  target_bruto_weight = target_net_weight + actual_tarra;
   // if not stopped or paused 
-  if((runmode==2) && (dosing_state == DOSING_FULL || dosing_state == DOSING_FINE))
-  { if(dosing_state == DOSING_FULL) actual_angle = full_dosage_angle;
-    else actual_angle = fine_dosage_angle;
-    grams_to_go = (target_weight - GramsOnScale);
-    if(grams_to_go < fein_dosier_gewicht) // now squeeze the valve gradually and elegant
-    { dosing_state = DOSING_FINE;
+  if((runmode==2) && (dosing_state == DOSING_FAST || dosing_state == DOSING_SLOW))
+  { if(dosing_state == DOSING_FAST) actual_angle = fast_dosage_angle;
+    else actual_angle = slow_dosage_angle;
+    grams_to_go = (target_bruto_weight - GramsOnScale + SysParams[CORRECTION]); // correction is between 0 and a negative number, to close more early
+    net_weight_in_jar = GramsOnScale - actual_tarra;
+    if(net_weight_in_jar > slow_down_at_net_weight)  // now squeeze the valve gradually and elegant
+    { dosing_state = DOSING_SLOW;
       scale_status = SCALE_JAR_FILL_SLOW_SPEED;
       if(grams_to_go < 0)grams_to_go=0; // don't act silly if we have an overfilled jar
       // calculate a elegant angle for closing the valve, between minimum allowed and chosen angle for fine_dosage
-      actual_angle =  (round) ( ((grams_to_go / fein_dosier_gewicht) * (fine_dosage_angle - SysParams[SERVOMIN])) + SysParams[SERVOMIN]);
+
+      actual_angle =  (round) ( (grams_to_go / (target_net_weight - slow_down_at_net_weight + SysParams[CORRECTION]) * (slow_dosage_angle - SysParams[SERVOMIN])) + SysParams[SERVOMIN]);
     }
     if(grams_to_go <= 0) // jar is filled
-    { dosing_state = DOSING_STOPPED;
+    { dosing_state = DOSING_FINISHED;
       scale_status = SCALE_JAR_FILLED;
-      actual_tarra = expected_tarra; 
       Products[product_chosen].Count++;
-      Products[product_chosen].TripCount++;
       SaveParameters();
     }
   }
 
     
-  target_weight = net_weight + actual_tarra + SysParams[CORRECTION] + autokorrektur_gr;
+  target_bruto_weight = target_net_weight + actual_tarra + SysParams[CORRECTION] + autokorrektur_gr;
   // Anpassung des Autokorrektur-Werts
   if (SysParams[AUTO_CORRECTION] == 1) {                                                       
-    if ( auto_aktiv == 1 && servo_aktiv == 0 && actual_angle == SysParams[SERVOMIN] + offset_winkel && gewicht >= target_weight && sammler_num <= 5) {     
+    if ( auto_aktiv == 1 && servo_aktiv == 0 && actual_angle == SysParams[SERVOMIN] + offset_winkel && gewicht >= target_bruto_weight && sammler_num <= 5) {     
       voll = true;                       
       if (gewicht == gewicht_vorher && sammler_num < 5) { // wir wollen 5x das identische Gewicht sehen  
         sammler_num++;
@@ -502,7 +517,7 @@ void processAutomatik2(void)
         sammler_num = 0;
       } 
       else if (sammler_num == 5) {                        // gewicht ist 5x identisch, autokorrektur bestimmen
-        autokorrektur_gr = (net_weight + SysParams[COULANCE] + actual_tarra) - (gewicht - autokorrektur_gr);
+        autokorrektur_gr = (target_net_weight + SysParams[COULANCE] + actual_tarra) - (gewicht - autokorrektur_gr);
         if (SysParams[CORRECTION] + autokorrektur_gr > SysParams[COULANCE]) {   // Autokorrektur darf nicht überkorrigieren, max Füllmenge plus SysParams[COULANCE]
           autokorrektur_gr = SysParams[COULANCE] - SysParams[CORRECTION];
           #ifdef isDebug
@@ -514,94 +529,12 @@ void processAutomatik2(void)
         sammler_num++;                                      // Korrekturwert für diesen Durchlauf erreicht
       }
       if (voll == true && gezaehlt == false) {
-        Products[product_chosen].TripCount++;
         Products[product_chosen].Count++;
         gezaehlt = true;
       }
-      #ifdef isDebug
-        Serial.print("Nachtropfen:");
-        Serial.print(" gewicht: ");        Serial.print(gewicht);
-        Serial.print(" gewicht_vorher: "); Serial.print(gewicht_vorher);
-        Serial.print(" sammler_num: ");    Serial.print(sammler_num);
-        Serial.print(" Korrektur: ");      Serial.println(autokorrektur_gr);
-        Serial.print(" Zähler Trip: ");    Serial.print(Products[product_chosen].TripCount); //Kud
-        Serial.print(" Zähler: ");         Serial.println(Products[product_chosen].Count); //Kud
-      #endif
     }
   }
-  // Glas ist teilweise gefüllt. Start wird über Start-Taster erzwungen
-  if (auto_aktiv == 1 && gewicht > 5 && erzwinge_servo_aktiv == 1) {
-    servo_aktiv = 1;
-    voll = false;
-    gezaehlt = false;
-    buzzer(BUZZER_SHORT);
-  }
   
-  
-  
-  if (servo_aktiv == 1 && actual_angle <= SysParams[SERVOFINEDOS]) {
-    actual_angle = SysParams[SERVOFINEDOS];
-  }
-  // Glas ist voll
-  if (servo_aktiv == 1 && gewicht >= target_weight) {
-    actual_angle      = SysParams[SERVOMIN] + offset_winkel;
-    servo_aktiv = 0;
-    if (gezaehlt == false) {
-      Products[product_chosen].TripCount++;
-      Products[product_chosen].Count++;
-      gezaehlt = true;
-    }
-    if (SysParams[AUTOSTART] != 1)       // autostart ist nicht aktiv, kein weiterer Start
-      auto_aktiv = 0;
-    if (SysParams[AUTO_CORRECTION] == 1)   // autokorrektur, gewicht merken
-      gewicht_vorher = gewicht;
-    buzzer(BUZZER_SHORT);
-  }
-//  SERVO_WRITE(actual_angle);
-  #ifdef isDebug
-    #if isDebug >= 4
-      Serial.print("Automatik:");  
-      Serial.print(" Gewicht: ");        Serial.print(gewicht);
-      Serial.print(" Dauer ");           Serial.print(millis() - scaletime);
-      Serial.print(" Füllmenge: ");      Serial.print(net_weight);
-      Serial.print(" actual_tarra:");       Serial.print(actual_tarra);
-      Serial.print(" Autokorrektur: ");  Serial.print(autokorrektur_gr);
-      Serial.print(" target_weight ");     Serial.print(target_weight);
-      Serial.print(" servo_aktiv ");     Serial.print(servo_aktiv);
-      Serial.print(" auto_aktiv ");      Serial.println(auto_aktiv);
-    #endif 
-  #endif
-  if (bINA219_installed && (SysParams[SERVOMAXCURRENT] > 0 or show_current == 1)) {
-    y_offset = 4;
-  }
-  if (bINA219_installed && (current_mA != current_mA_alt) && ((SysParams[SERVOMAXCURRENT] > 0) || (show_current == 1))) {
-  //  gfx->fillRect(260, 187, 70, 18, COLOR_BACKGROUND);
-    gfx->setTextColor(COLOR_TEXT);
-    gfx->setFont(Punk_Mono_Thin_160_100);
-    gfx->setCursor(265, 202);
-    if (current_mA > SysParams[SERVOMAXCURRENT] and SysParams[SERVOMAXCURRENT] > 0) {
-      gfx->setTextColor(RED);
-    }
-    sprintf(text, "%4imA", current_mA);
-  //  gfx->print(text);
-    gfx->setTextColor(COLOR_TEXT);
-    current_mA_alt = current_mA;
-  }
-  else if (bINA219_installed && no_ina == 0 && show_current == 0) {
-    no_ina = true;
-    gfx->setTextColor(COLOR_TEXT);
-    gfx->setFont(Punk_Mono_Thin_160_100);
-    gfx->setCursor(265, 202);
-  //  gfx->print("   aus");
-  }
-  else if (bINA219_installed && no_ina == 0) {
-    no_ina = true;
-    gfx->fillRect(260, 187, 70, 18, COLOR_BACKGROUND);
-    gfx->setTextColor(COLOR_TEXT);
-    gfx->setFont(Punk_Mono_Thin_160_100);
-    gfx->setCursor(265, 202);
-  //  gfx->print("    NA");
-  }
   
   // update line 3 with new correction
   if (korr_alt != SysParams[CORRECTION] + autokorrektur_gr) 
@@ -609,21 +542,6 @@ void processAutomatik2(void)
     TFT_line_print(3, text, rotary_select == SW_KORREKTUR );
     korr_alt = SysParams[CORRECTION] + autokorrektur_gr;
   }
-  
-  
-  if (autokorr_gr_alt != autokorrektur_gr) {
-    gfx->setFont(Punk_Mono_Thin_160_100);
-    gfx->setTextColor(COLOR_BACKGROUND);
-    gfx->setCursor(265, 236);
-    sprintf(text, "%5ig", autokorr_gr_alt);
-  //  gfx->print(text);
-    gfx->setTextColor(COLOR_TEXT);
-    gfx->setCursor(265, 236);
-    sprintf(text, "%5ig", autokorrektur_gr);
-  //  gfx->print(text);
-    autokorr_gr_alt = autokorrektur_gr;
-  }
-  
   
   // encoder clicked
   if (rotary_select != rotary_select_alt) 
@@ -637,7 +555,7 @@ void processAutomatik2(void)
   // Jar Icon Filling Indicator
   if (expected_tarra > 0) {
     // if(dosing_state == DOSING_STOPPED)gewicht = 0;
-    if(weight_status == WEIGHT_PARTIAL_JAR || weight_status == WEIGHT_FULL_JAR || dosing_state==DOSING_FULL || dosing_state == DOSING_FINE || scale_status == SCALE_JAR_FILLED)gewicht = NewWeight;
+    if(weight_status == WEIGHT_PARTIAL_JAR || weight_status == WEIGHT_FULL_JAR || dosing_state==DOSING_FAST || dosing_state == DOSING_SLOW || scale_status == SCALE_JAR_FILLED)gewicht = NewWeight;
     else gewicht = 0;
     if (gewicht != gewicht_alt) {
       if (Products[product_chosen].Gewicht > gewicht) {
@@ -656,7 +574,6 @@ void processAutomatik2(void)
     }
   }
   
-  
   // CURRENT STUFF
 //  if (alarm_overcurrent) {i = 1;}
   while (i > 0) {
@@ -674,5 +591,4 @@ void processAutomatik2(void)
     i = 0;
     inawatchdog = 1;
   }
-  setPreferences();
 }

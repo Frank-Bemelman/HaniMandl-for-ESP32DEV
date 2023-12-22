@@ -5,9 +5,9 @@
 TFT_eSPI tft = TFT_eSPI(240,320);
 
 #include "hani.h"
-#include "Arialnarrow26.h"
-#include "Arialbd72.h"
-#include "Tahoma18.h"
+#include "arialnarrow26.h"
+#include "arialbd72.h"
+#include "tahoma18.h"
 
 #include "flowers.h"
 #include "jar90h62w2.h"

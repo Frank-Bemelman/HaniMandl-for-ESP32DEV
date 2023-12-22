@@ -138,6 +138,7 @@ void SetupMyDisplay(void)
 { 
   
   tft.init();
+  tft.invertDisplay(0); // change to 1 if all colors seem inverted
   tft.fillScreen(TFT_RED);
   tft.setRotation(3); // 3 - using ST7789 320(w) x 240(h) with connector on lefthand side
   tft.setRotation(1); // 3 - using ST7789 320(w) x 240(h) with connector on righthand side

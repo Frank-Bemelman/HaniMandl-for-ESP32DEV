@@ -105,7 +105,8 @@ struct ProductParameter {
 #define SERVO_PIN 2
 
 struct MenuLine
-{ char name[32];
+{ int labelidx;
+  char name[32];
   int  min;
   int  max;
   int  value;
